@@ -10,35 +10,46 @@ const lastExecutions = new Map();
 // In-memory storage for partial sales state with enhanced tracking
 const partialSales = new Map();
 
+// Dynamic sale strategy configuration
+const saleStrategyConfig = {
+  levels: [
+    { percentage: 0.3, priceIncrease: 0 },    // 30% on first sale
+    { percentage: 0.3, priceIncrease: 0.05 }, // 30% at +5%
+    { percentage: 0.2, priceIncrease: 0.10 }, // 20% at +10%
+    { percentage: 0.2, priceIncrease: 0.15 }  // 20% at +15%
+  ],
+  trailingStop: 0.05, // 5% below the highest price
+  minSellValueBRL: 50 // minimum R$50 per sale
+};
+
 // Enhanced partial sales tracking
 class PartialSaleTracker {
   constructor(symbol, initialAmount, firstSellPrice) {
     this.symbol = symbol;
     this.initialAmount = initialAmount;
     this.firstSellPrice = firstSellPrice;
-    this.firstSellAmount = initialAmount * 0.3; // 30% na primeira venda
-    this.remainingAmount = initialAmount - this.firstSellAmount;
+    this.remainingAmount = initialAmount;
     this.highestPrice = firstSellPrice;
-    this.sellLevels = [
-      { percentage: 0.3, price: firstSellPrice, executed: true }, // 30% na primeira venda
-      { percentage: 0.3, price: firstSellPrice * 1.05, executed: false }, // 30% a +5%
-      { percentage: 0.2, price: firstSellPrice * 1.10, executed: false }, // 20% a +10%
-      { percentage: 0.2, price: firstSellPrice * 1.15, executed: false }  // 20% a +15%
-    ];
-    this.trailingStop = firstSellPrice * 0.95; // Stop loss a -5% do preço mais alto
+    this.sellLevels = saleStrategyConfig.levels.map((level, idx) => ({
+      percentage: level.percentage,
+      price: firstSellPrice * (1 + level.priceIncrease),
+      executed: idx === 0 // first sale already executed
+    }));
+    this.remainingAmount -= initialAmount * this.sellLevels[0].percentage;
+    this.trailingStop = firstSellPrice * (1 - saleStrategyConfig.trailingStop);
     this.lastUpdate = Date.now();
   }
 
   updateHighestPrice(currentPrice) {
     if (currentPrice > this.highestPrice) {
       this.highestPrice = currentPrice;
-      // Atualizar trailing stop (mantém 5% abaixo do preço mais alto)
+      // Update trailing stop (keeps 5% below the highest price)
       this.trailingStop = Math.max(this.trailingStop, currentPrice * 0.95);
     }
   }
 
   shouldSell(currentPrice) {
-    // Verificar se atingiu algum nível de venda
+    // Check if any sale level is reached
     for (let level of this.sellLevels) {
       if (!level.executed && currentPrice >= level.price) {
         return {
@@ -50,7 +61,7 @@ class PartialSaleTracker {
       }
     }
 
-    // Verificar trailing stop
+    // Check trailing stop
     if (currentPrice <= this.trailingStop && this.remainingAmount > 0) {
       return {
         shouldSell: true,
@@ -231,14 +242,14 @@ async function jobRunHandler(request, reply) {
         const sellDecision = tracker.shouldSell(currentPrice);
         
         if (sellDecision.shouldSell) {
-          // NovaDAX exige venda mínima de R$50
-          const minSellValueBRL = 50;
+          // NovaDAX requires a minimum sale of R$50 (or configured value)
+          const minSellValueBRL = saleStrategyConfig.minSellValueBRL;
           const sellValueBRL = sellDecision.amount * currentPrice;
           if (sellValueBRL < minSellValueBRL) {
-            console.log(`[JOB] Venda NÃO executada | Symbol: ${symbol} | Motivo: valor da venda (R$${sellValueBRL.toFixed(2)}) menor que o mínimo de R$${minSellValueBRL}`);
+            console.log(`[JOB] Sale NOT executed | Symbol: ${symbol} | Reason: sale value (R$${sellValueBRL.toFixed(2)}) is less than the minimum of R$${minSellValueBRL}`);
             return reply.send({
               success: false,
-              message: `Venda não executada: valor da venda (R$${sellValueBRL.toFixed(2)}) menor que o mínimo de R$${minSellValueBRL}`,
+              message: `Sale not executed: sale value (R$${sellValueBRL.toFixed(2)}) is less than the minimum of R$${minSellValueBRL}`,
               strategy: {
                 requiredMinValue: minSellValueBRL,
                 attemptedValue: sellValueBRL,
@@ -323,12 +334,10 @@ async function jobRunHandler(request, reply) {
 async function jobConfigHandler(request, reply) {
   try {
     const config = await jobService.updateConfig(request.body);
-    
     // Update cron schedule if available
     if (request.server.updateCronSchedule) {
       await request.server.updateCronSchedule();
     }
-    
     return reply.send(config);
   } catch (err) {
     return reply.status(500).send({ error: err.message });
@@ -386,22 +395,18 @@ async function jobStatusDetailedHandler(request, reply) {
 async function jobUpdateIntervalHandler(request, reply) {
   try {
     const { checkInterval } = request.body;
-    
     // Validate cron format
     if (!cron.validate(checkInterval)) {
       return reply.status(400).send({ error: 'Invalid interval format. Use cron format (ex: */5 * * * *)' });
     }
-    
     // Update configuration
     const config = await jobService.updateConfig({
       checkInterval
     });
-    
     // Update cron schedule if available
     if (request.server.updateCronSchedule) {
       await request.server.updateCronSchedule();
     }
-    
     return reply.send(config);
   } catch (err) {
     return reply.status(500).send({ error: err.message });
@@ -411,11 +416,9 @@ async function jobUpdateIntervalHandler(request, reply) {
 async function jobStrategyStatusHandler(request, reply) {
   try {
     const strategies = [];
-    
     for (const [symbol, tracker] of partialSales.entries()) {
       const metrics = tracker.getProfitMetrics();
       const remainingTargets = tracker.sellLevels.filter(l => !l.executed);
-      
       strategies.push({
         symbol,
         initialAmount: tracker.initialAmount,
@@ -433,7 +436,6 @@ async function jobStrategyStatusHandler(request, reply) {
         age: ((Date.now() - tracker.lastUpdate) / (60 * 60 * 1000)).toFixed(1) + 'h'
       });
     }
-    
     return reply.send({
       activeStrategies: strategies.length,
       strategies,
@@ -443,6 +445,50 @@ async function jobStrategyStatusHandler(request, reply) {
           (strategies.reduce((sum, s) => sum + parseFloat(s.profitMetrics.maxProfitPercent), 0) / strategies.length).toFixed(2) + '%' : '0%'
       }
     });
+  } catch (err) {
+    return reply.status(500).send({ error: err.message });
+  }
+}
+
+// Endpoint to get the sale strategy configuration
+async function getSaleStrategyConfigHandler(request, reply) {
+  return reply.send(saleStrategyConfig);
+}
+
+// Endpoint to update the sale strategy configuration
+async function updateSaleStrategyConfigHandler(request, reply) {
+  try {
+    const { levels, trailingStop, minSellValueBRL } = request.body;
+    if (levels) {
+      // Basic validation of levels
+      if (!Array.isArray(levels) || levels.length === 0) {
+        return reply.status(400).send({ error: 'levels must be a non-empty array' });
+      }
+      let total = 0;
+      for (const l of levels) {
+        if (typeof l.percentage !== 'number' || typeof l.priceIncrease !== 'number') {
+          return reply.status(400).send({ error: 'Each level must have numeric percentage and priceIncrease' });
+        }
+        total += l.percentage;
+      }
+      if (Math.abs(total - 1) > 0.01) {
+        return reply.status(400).send({ error: 'The sum of percentages must be 1 (100%)' });
+      }
+      saleStrategyConfig.levels = levels;
+    }
+    if (typeof trailingStop === 'number') {
+      if (trailingStop < 0.01 || trailingStop > 0.5) {
+        return reply.status(400).send({ error: 'trailingStop must be between 0.01 and 0.5 (1% to 50%)' });
+      }
+      saleStrategyConfig.trailingStop = trailingStop;
+    }
+    if (typeof minSellValueBRL === 'number') {
+      if (minSellValueBRL < 10) {
+        return reply.status(400).send({ error: 'minSellValueBRL must be at least 10' });
+      }
+      saleStrategyConfig.minSellValueBRL = minSellValueBRL;
+    }
+    return reply.send(saleStrategyConfig);
   } catch (err) {
     return reply.status(500).send({ error: err.message });
   }
@@ -459,5 +505,7 @@ module.exports = {
   jobGetSymbolHandler,
   jobStatusDetailedHandler,
   jobUpdateIntervalHandler,
-  jobStrategyStatusHandler
+  jobStrategyStatusHandler,
+  getSaleStrategyConfigHandler,
+  updateSaleStrategyConfigHandler
 }; 

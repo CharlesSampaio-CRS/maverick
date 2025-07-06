@@ -45,6 +45,45 @@ const intervalSchema = {
   }
 };
 
+const saleStrategyConfigSchema = {
+  type: 'object',
+  properties: {
+    levels: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          percentage: { type: 'number', minimum: 0, maximum: 1 },
+          priceIncrease: { type: 'number', minimum: 0 }
+        },
+        required: ['percentage', 'priceIncrease']
+      }
+    },
+    trailingStop: { type: 'number', minimum: 0.01, maximum: 0.5 },
+    minSellValueBRL: { type: 'number', minimum: 10 }
+  },
+  required: ['levels', 'trailingStop', 'minSellValueBRL']
+};
+
+const saleStrategyConfigUpdateSchema = {
+  type: 'object',
+  properties: {
+    levels: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          percentage: { type: 'number', minimum: 0, maximum: 1 },
+          priceIncrease: { type: 'number', minimum: 0 }
+        },
+        required: ['percentage', 'priceIncrease']
+      }
+    },
+    trailingStop: { type: 'number', minimum: 0.01, maximum: 0.5 },
+    minSellValueBRL: { type: 'number', minimum: 10 }
+  }
+};
+
 const jobRoutes = async (fastify, opts) => {
   fastify.get('/job/status', {
     schema: {
@@ -121,6 +160,22 @@ const jobRoutes = async (fastify, opts) => {
   fastify.get('/job/status/detailed', {
     schema: { summary: 'Get detailed job status', response: { 200: jobConfigSchema } }
   }, jobStatusDetailedHandler);
+
+  // Rotas para configuração da estratégia de venda
+  fastify.get('/job/sale-strategy', {
+    schema: {
+      summary: 'Obter configuração da estratégia de venda',
+      response: { 200: saleStrategyConfigSchema }
+    }
+  }, require('../controllers/jobController').getSaleStrategyConfigHandler);
+
+  fastify.put('/job/sale-strategy', {
+    schema: {
+      summary: 'Alterar configuração da estratégia de venda',
+      body: saleStrategyConfigUpdateSchema,
+      response: { 200: saleStrategyConfigSchema }
+    }
+  }, require('../controllers/jobController').updateSaleStrategyConfigHandler);
 };
 
 module.exports = jobRoutes; 
