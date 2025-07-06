@@ -151,6 +151,48 @@ curl -X PUT http://localhost:3000/job/symbols/BTC_BRL \
   }'
 ```
 
+#### Atualizar intervalo do job em tempo real:
+```bash
+# Alterar para executar a cada 5 minutos
+curl -X POST http://localhost:3000/job/interval \
+  -H "Content-Type: application/json" \
+  -d '{
+    "checkInterval": "*/5 * * * *"
+  }'
+
+# Alterar para executar a cada hora
+curl -X POST http://localhost:3000/job/interval \
+  -H "Content-Type: application/json" \
+  -d '{
+    "checkInterval": "0 * * * *"
+  }'
+
+# Alterar para executar a cada 2 horas
+curl -X POST http://localhost:3000/job/interval \
+  -H "Content-Type: application/json" \
+  -d '{
+    "checkInterval": "0 */2 * * *"
+  }'
+```
+
+#### Atualizar toda a configuração do job:
+```bash
+curl -X POST http://localhost:3000/job/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enabled": true,
+    "checkInterval": "*/10 * * * *",
+    "symbols": [
+      {
+        "symbol": "BTC_BRL",
+        "buyThreshold": -15,
+        "sellThreshold": 20,
+        "enabled": true
+      }
+    ]
+  }'
+```
+
 #### Remover símbolo:
 ```bash
 curl -X DELETE http://localhost:3000/job/symbols/ETH_BRL
@@ -159,28 +201,6 @@ curl -X DELETE http://localhost:3000/job/symbols/ETH_BRL
 #### Obter configuração de um símbolo:
 ```bash
 curl http://localhost:3000/job/symbols/BTC_BRL
-```
-
-#### Atualizar toda a configuração:
-```bash
-curl -X POST http://localhost:3000/job/config \
-  -H "Content-Type: application/json" \
-  -d '{
-    "symbols": [
-      {
-        "symbol": "MOG_BRL",
-        "buyThreshold": -10,
-        "sellThreshold": 10,
-        "enabled": true
-      },
-      {
-        "symbol": "BTC_BRL",
-        "buyThreshold": -15,
-        "sellThreshold": 15,
-        "enabled": true
-      }
-    ]
-  }'
 ```
 
 ## Instalação

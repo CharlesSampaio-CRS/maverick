@@ -5,7 +5,8 @@ const {
   jobConfigHandler,
   jobRemoveSymbolHandler,
   jobGetSymbolHandler,
-  jobStatusDetailedHandler
+  jobStatusDetailedHandler,
+  jobUpdateIntervalHandler
 } = require('../controllers/jobController');
 
 const jobConfigSchema = {
@@ -36,6 +37,14 @@ const symbolBodySchema = {
   }
 };
 
+const intervalSchema = {
+  type: 'object',
+  required: ['checkInterval'],
+  properties: {
+    checkInterval: { type: 'string' }
+  }
+};
+
 const jobRoutes = async (fastify, opts) => {
   fastify.get('/job/status', {
     schema: {
@@ -60,6 +69,14 @@ const jobRoutes = async (fastify, opts) => {
   fastify.post('/job/config', {
     schema: { summary: 'Atualizar configuração do job', body: jobConfigSchema, response: { 200: jobConfigSchema } }
   }, jobConfigHandler);
+
+  fastify.post('/job/interval', {
+    schema: { 
+      summary: 'Atualizar apenas o intervalo do job', 
+      body: intervalSchema, 
+      response: { 200: jobConfigSchema } 
+    }
+  }, jobUpdateIntervalHandler);
 
   fastify.post('/job/toggle/:symbol', {
     schema: {

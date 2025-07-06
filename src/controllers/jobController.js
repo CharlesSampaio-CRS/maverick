@@ -3,6 +3,7 @@ const tickerService = require('../services/tickerService');
 const balanceService = require('../services/balanceService');
 const ordersService = require('../services/ordersService');
 const Operation = require('../models/Operation');
+const cron = require('node-cron');
 
 async function jobStatusHandler(request, reply) {
   try {
@@ -96,6 +97,12 @@ async function jobRunHandler(request, reply) {
 async function jobConfigHandler(request, reply) {
   try {
     const result = await jobService.config(request.body);
+    
+    // Atualiza o agendamento do cron job em tempo real
+    if (request.server.updateCronSchedule) {
+      await request.server.updateCronSchedule();
+    }
+    
     return reply.send(result);
   } catch (err) {
     return reply.status(500).send({ error: err.message });
@@ -145,6 +152,37 @@ async function jobStatusDetailedHandler(request, reply) {
   }
 }
 
+async function jobUpdateIntervalHandler(request, reply) {
+  try {
+    const { checkInterval } = request.body;
+    
+    // Valida o formato do cron
+    if (!cron.validate(checkInterval)) {
+      return reply.status(400).send({ error: 'Formato de intervalo inválido. Use formato cron (ex: */5 * * * *)' });
+    }
+    
+    // Obtém a configuração atual
+    const currentConfig = await jobService.status();
+    
+    // Atualiza apenas o intervalo
+    const updatedConfig = {
+      ...currentConfig,
+      checkInterval
+    };
+    
+    const result = await jobService.config(updatedConfig);
+    
+    // Atualiza o agendamento do cron job em tempo real
+    if (request.server.updateCronSchedule) {
+      await request.server.updateCronSchedule();
+    }
+    
+    return reply.send(result);
+  } catch (err) {
+    return reply.status(500).send({ error: err.message });
+  }
+}
+
 module.exports = {
   jobStatusHandler,
   jobToggleHandler,
@@ -154,5 +192,6 @@ module.exports = {
   jobRemoveSymbolHandler,
   jobUpdateSymbolHandler,
   jobGetSymbolHandler,
-  jobStatusDetailedHandler
+  jobStatusDetailedHandler,
+  jobUpdateIntervalHandler
 }; 
