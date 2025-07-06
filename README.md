@@ -1,6 +1,42 @@
-# NovaDAX Trading Bot API
+# NovaDAX Bot API
 
-API para automatizar operações de trading na NovaDAX com monitoramento automático de variações de preço para múltiplos símbolos.
+API Node.js para automação de ordens na NovaDAX, com Fastify, MongoDB e Swagger.
+
+## Pré-requisitos
+- Node.js 18+
+- MongoDB
+
+## Instalação
+```bash
+git clone ...
+cd ordersautomstic
+npm install
+cp .env.example .env # Edite com suas chaves
+```
+
+## Configuração
+Edite o arquivo `.env` com suas chaves da NovaDAX e string do MongoDB.
+
+## Rodando o projeto
+```bash
+npm start
+```
+
+Acesse a documentação Swagger em: [http://localhost:3000/docs](http://localhost:3000/docs)
+
+## Endpoints principais
+
+- **POST /buy** — Criar ordem de compra
+- **POST /sell** — Criar ordem de venda
+- **GET /balance** — Listar saldos
+- **GET /balance/:currency** — Saldo de uma moeda
+- **GET /ticker/:symbol** — Preço e variação
+- **GET /operations/history** — Histórico de operações
+
+## Exemplo de requisição de compra
+```bash
+curl -X POST http://localhost:3000/buy -H 'Content-Type: application/json' -d '{"symbol":"MOG_BRL","amount":100}'
+```
 
 ## Funcionalidades
 
