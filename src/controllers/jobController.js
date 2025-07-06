@@ -7,8 +7,101 @@ const cron = require('node-cron');
 
 // In-memory storage for last execution times
 const lastExecutions = new Map();
-// In-memory storage for partial sales state
+// In-memory storage for partial sales state with enhanced tracking
 const partialSales = new Map();
+
+// Enhanced partial sales tracking
+class PartialSaleTracker {
+  constructor(symbol, initialAmount, firstSellPrice) {
+    this.symbol = symbol;
+    this.initialAmount = initialAmount;
+    this.firstSellPrice = firstSellPrice;
+    this.firstSellAmount = initialAmount * 0.3; // 30% na primeira venda
+    this.remainingAmount = initialAmount - this.firstSellAmount;
+    this.highestPrice = firstSellPrice;
+    this.sellLevels = [
+      { percentage: 0.3, price: firstSellPrice, executed: true }, // 30% na primeira venda
+      { percentage: 0.3, price: firstSellPrice * 1.05, executed: false }, // 30% a +5%
+      { percentage: 0.2, price: firstSellPrice * 1.10, executed: false }, // 20% a +10%
+      { percentage: 0.2, price: firstSellPrice * 1.15, executed: false }  // 20% a +15%
+    ];
+    this.trailingStop = firstSellPrice * 0.95; // Stop loss a -5% do preço mais alto
+    this.lastUpdate = Date.now();
+  }
+
+  updateHighestPrice(currentPrice) {
+    if (currentPrice > this.highestPrice) {
+      this.highestPrice = currentPrice;
+      // Atualizar trailing stop (mantém 5% abaixo do preço mais alto)
+      this.trailingStop = Math.max(this.trailingStop, currentPrice * 0.95);
+    }
+  }
+
+  shouldSell(currentPrice) {
+    // Verificar se atingiu algum nível de venda
+    for (let level of this.sellLevels) {
+      if (!level.executed && currentPrice >= level.price) {
+        return {
+          shouldSell: true,
+          amount: this.initialAmount * level.percentage,
+          reason: `Price target reached: ${currentPrice} >= ${level.price}`,
+          level: level
+        };
+      }
+    }
+
+    // Verificar trailing stop
+    if (currentPrice <= this.trailingStop && this.remainingAmount > 0) {
+      return {
+        shouldSell: true,
+        amount: this.remainingAmount,
+        reason: `Trailing stop triggered: ${currentPrice} <= ${this.trailingStop}`,
+        level: { percentage: 1, price: currentPrice, executed: true }
+      };
+    }
+
+    return { shouldSell: false };
+  }
+
+  markLevelExecuted(level) {
+    level.executed = true;
+    this.remainingAmount -= this.initialAmount * level.percentage;
+  }
+
+  isComplete() {
+    return this.remainingAmount <= 0;
+  }
+
+  getProfitMetrics() {
+    const avgSellPrice = this.sellLevels
+      .filter(l => l.executed)
+      .reduce((sum, l) => sum + (l.price * l.percentage), 0) / 
+      this.sellLevels.filter(l => l.executed).reduce((sum, l) => sum + l.percentage, 0);
+    
+    return {
+      avgSellPrice,
+      profitPercent: ((avgSellPrice / this.firstSellPrice - 1) * 100).toFixed(2),
+      highestPrice: this.highestPrice,
+      maxProfitPercent: ((this.highestPrice / this.firstSellPrice - 1) * 100).toFixed(2)
+    };
+  }
+}
+
+// Cleanup old strategies (older than 24 hours)
+function cleanupOldStrategies() {
+  const now = Date.now();
+  const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+  
+  for (const [symbol, tracker] of partialSales.entries()) {
+    if (now - tracker.lastUpdate > maxAge) {
+      console.log(`[JOB] Cleanup | Removing old strategy for ${symbol} | Age: ${((now - tracker.lastUpdate) / (60 * 60 * 1000)).toFixed(1)}h`);
+      partialSales.delete(symbol);
+    }
+  }
+}
+
+// Run cleanup every hour
+setInterval(cleanupOldStrategies, 60 * 60 * 1000);
 
 async function jobStatusHandler(request, reply) {
   try {
@@ -101,34 +194,122 @@ async function jobRunHandler(request, reply) {
         return reply.send({ success: false, message: 'Insufficient balance to sell.' });
       }
 
-      // Partial sale logic
-      let partial = partialSales.get(symbol);
-      if (!partial) {
-        // First sale: sell 50%, store price
-        const sellAmount = amount * 0.5;
-        const op = await ordersService.createSellOrder(symbol, sellAmount);
+      const currentPrice = parseFloat(ticker.lastPrice);
+      
+      // Enhanced partial sale logic with multiple exit levels
+      let tracker = partialSales.get(symbol);
+      
+      if (!tracker) {
+        // First sale: sell 30% immediately, setup tracking for remaining 70%
+        const firstSellAmount = amount * 0.3;
+        const op = await ordersService.createSellOrder(symbol, firstSellAmount);
+        
         if (op.status === 'success') {
-          partialSales.set(symbol, { firstSellPrice: parseFloat(ticker.lastPrice), remaining: amount - sellAmount });
-          console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL 50% | Value: ${sellAmount} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Date: ${nowStr}`);
-          return reply.send({ success: true, message: 'Sell order (50%) executed', op });
+          tracker = new PartialSaleTracker(symbol, amount, currentPrice);
+          partialSales.set(symbol, tracker);
+          
+          console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL 30% | Amount: ${firstSellAmount} | Price: ${currentPrice} | 24h change: ${ticker.changePercent24h}% | Date: ${nowStr}`);
+          console.log(`[JOB] Strategy | Next targets: +5% (${tracker.sellLevels[1].price}), +10% (${tracker.sellLevels[2].price}), +15% (${tracker.sellLevels[3].price}) | Trailing stop: ${tracker.trailingStop}`);
+          
+          return reply.send({ 
+            success: true, 
+            message: 'Sell order (30%) executed - Multi-level strategy activated', 
+            op,
+            strategy: {
+              nextTargets: tracker.sellLevels.filter(l => !l.executed).map(l => ({ percentage: l.percentage * 100, price: l.price })),
+              trailingStop: tracker.trailingStop
+            }
+          });
         } else {
-          return reply.send({ success: false, message: 'Sell order (50%) failed', op });
+          return reply.send({ success: false, message: 'Sell order (30%) failed', op });
         }
       } else {
-        // Second sale: only if price is higher than first sale
-        if (parseFloat(ticker.lastPrice) > partial.firstSellPrice && partial.remaining > 0) {
-          const op = await ordersService.createSellOrder(symbol, partial.remaining);
+        // Update tracker with current price
+        tracker.updateHighestPrice(currentPrice);
+        
+        // Check if we should sell based on strategy
+        const sellDecision = tracker.shouldSell(currentPrice);
+        
+        if (sellDecision.shouldSell) {
+          // NovaDAX exige venda mínima de R$50
+          const minSellValueBRL = 50;
+          const sellValueBRL = sellDecision.amount * currentPrice;
+          if (sellValueBRL < minSellValueBRL) {
+            console.log(`[JOB] Venda NÃO executada | Symbol: ${symbol} | Motivo: valor da venda (R$${sellValueBRL.toFixed(2)}) menor que o mínimo de R$${minSellValueBRL}`);
+            return reply.send({
+              success: false,
+              message: `Venda não executada: valor da venda (R$${sellValueBRL.toFixed(2)}) menor que o mínimo de R$${minSellValueBRL}`,
+              strategy: {
+                requiredMinValue: minSellValueBRL,
+                attemptedValue: sellValueBRL,
+                attemptedAmount: sellDecision.amount,
+                currentPrice
+              }
+            });
+          }
+          const op = await ordersService.createSellOrder(symbol, sellDecision.amount);
+          
           if (op.status === 'success') {
-            partialSales.delete(symbol); // Reset state
-            console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL REMAINING 50% | Value: ${partial.remaining} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Date: ${nowStr}`);
-            return reply.send({ success: true, message: 'Sell order (remaining 50%) executed', op });
+            tracker.markLevelExecuted(sellDecision.level);
+            
+            console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL ${(sellDecision.level.percentage * 100).toFixed(0)}% | Amount: ${sellDecision.amount} | Price: ${currentPrice} | Reason: ${sellDecision.reason} | Date: ${nowStr}`);
+            
+            // Check if strategy is complete
+            if (tracker.isComplete()) {
+              partialSales.delete(symbol);
+              
+              // Calculate final profit metrics
+              const metrics = tracker.getProfitMetrics();
+              console.log(`[JOB] Strategy Complete | Symbol: ${symbol} | All levels executed | Total profit strategy finished`);
+              console.log(`[JOB] Performance | Avg Sell Price: ${metrics.avgSellPrice} | Profit: +${metrics.profitPercent}% | Max Profit: +${metrics.maxProfitPercent}% | Highest Price: ${metrics.highestPrice}`);
+              
+              return reply.send({ 
+                success: true, 
+                message: `Sell order executed - Strategy complete: ${sellDecision.reason}`, 
+                op,
+                strategy: { 
+                  status: 'complete', 
+                  totalExecuted: true,
+                  performance: metrics
+                }
+              });
+            } else {
+              // Log remaining targets
+              const remainingTargets = tracker.sellLevels.filter(l => !l.executed);
+              console.log(`[JOB] Strategy Update | Remaining targets: ${remainingTargets.map(l => `+${((l.price/tracker.firstSellPrice-1)*100).toFixed(1)}%`).join(', ')} | Trailing stop: ${tracker.trailingStop}`);
+              
+              return reply.send({ 
+                success: true, 
+                message: `Sell order executed: ${sellDecision.reason}`, 
+                op,
+                strategy: {
+                  remainingTargets: remainingTargets.map(l => ({ percentage: l.percentage * 100, price: l.price })),
+                  trailingStop: tracker.trailingStop,
+                  highestPrice: tracker.highestPrice
+                }
+              });
+            }
           } else {
-            return reply.send({ success: false, message: 'Sell order (remaining 50%) failed', op });
+            return reply.send({ success: false, message: `Sell order failed: ${sellDecision.reason}`, op });
           }
         } else {
-          // Waiting for higher price
-          console.log(`[JOB] Not executed | Symbol: ${symbol} | Waiting for higher price to sell remaining 50% | Last sell price: ${partial.firstSellPrice} | Current price: ${ticker.lastPrice} | Date: ${nowStr}`);
-          return reply.send({ success: false, message: 'Waiting for higher price to sell remaining 50%.' });
+          // No sell condition met - log current status
+          const remainingTargets = tracker.sellLevels.filter(l => !l.executed);
+          const profitPotential = ((tracker.highestPrice / tracker.firstSellPrice - 1) * 100).toFixed(2);
+          
+          console.log(`[JOB] Strategy Monitor | Symbol: ${symbol} | Current: ${currentPrice} | Highest: ${tracker.highestPrice} | Profit: +${profitPotential}% | Waiting for targets: ${remainingTargets.map(l => `+${((l.price/tracker.firstSellPrice-1)*100).toFixed(1)}%`).join(', ')} | Stop: ${tracker.trailingStop} | Date: ${nowStr}`);
+          
+          return reply.send({ 
+            success: false, 
+            message: 'Strategy active - waiting for price targets or trailing stop',
+            strategy: {
+              currentPrice,
+              highestPrice: tracker.highestPrice,
+              profitPotential: `${profitPotential}%`,
+              remainingTargets: remainingTargets.map(l => ({ percentage: l.percentage * 100, price: l.price })),
+              trailingStop: tracker.trailingStop
+            }
+          });
         }
       }
     }
@@ -227,6 +408,46 @@ async function jobUpdateIntervalHandler(request, reply) {
   }
 }
 
+async function jobStrategyStatusHandler(request, reply) {
+  try {
+    const strategies = [];
+    
+    for (const [symbol, tracker] of partialSales.entries()) {
+      const metrics = tracker.getProfitMetrics();
+      const remainingTargets = tracker.sellLevels.filter(l => !l.executed);
+      
+      strategies.push({
+        symbol,
+        initialAmount: tracker.initialAmount,
+        remainingAmount: tracker.remainingAmount,
+        firstSellPrice: tracker.firstSellPrice,
+        currentHighestPrice: tracker.highestPrice,
+        trailingStop: tracker.trailingStop,
+        profitMetrics: metrics,
+        remainingTargets: remainingTargets.map(l => ({
+          percentage: l.percentage * 100,
+          price: l.price,
+          priceIncrease: ((l.price / tracker.firstSellPrice - 1) * 100).toFixed(1) + '%'
+        })),
+        lastUpdate: new Date(tracker.lastUpdate).toISOString(),
+        age: ((Date.now() - tracker.lastUpdate) / (60 * 60 * 1000)).toFixed(1) + 'h'
+      });
+    }
+    
+    return reply.send({
+      activeStrategies: strategies.length,
+      strategies,
+      summary: {
+        totalActive: strategies.length,
+        avgProfitPotential: strategies.length > 0 ? 
+          (strategies.reduce((sum, s) => sum + parseFloat(s.profitMetrics.maxProfitPercent), 0) / strategies.length).toFixed(2) + '%' : '0%'
+      }
+    });
+  } catch (err) {
+    return reply.status(500).send({ error: err.message });
+  }
+}
+
 module.exports = {
   jobStatusHandler,
   jobToggleHandler,
@@ -237,5 +458,6 @@ module.exports = {
   jobUpdateSymbolHandler,
   jobGetSymbolHandler,
   jobStatusDetailedHandler,
-  jobUpdateIntervalHandler
+  jobUpdateIntervalHandler,
+  jobStrategyStatusHandler
 }; 
