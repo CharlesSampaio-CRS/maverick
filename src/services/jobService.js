@@ -1,95 +1,98 @@
-const Config = require('../models/Config');
-
-async function getJobConfig() {
-  let config = await Config.findOne({ key: 'job_config' });
-  if (!config) {
-    config = await Config.create({
-      key: 'job_config',
-      value: {
-        enabled: true,
-        checkInterval: '*/3 * * * *',
-        symbols: []
-      }
-    });
-  }
-  return config.value;
-}
-
-async function setJobConfig(newValue) {
-  const config = await Config.findOneAndUpdate(
-    { key: 'job_config' },
-    { value: newValue, updatedAt: new Date() },
-    { new: true, upsert: true }
-  );
-  return config.value;
-}
+const JobConfig = require('../models/JobConfig');
 
 async function status() {
-  return await getJobConfig();
-}
-
-async function config(body) {
-  if (
-    typeof body.enabled !== 'boolean' ||
-    typeof body.checkInterval !== 'string' ||
-    !Array.isArray(body.symbols)
-  ) {
-    throw new Error('Parâmetros obrigatórios: enabled (boolean), checkInterval (string), symbols (array)');
+  let config = await JobConfig.findOne();
+  if (!config) {
+    config = new JobConfig({
+      enabled: false,
+      checkInterval: '*/3 * * * *',
+      symbols: [],
+      minVolume24h: 1000000,
+      cooldownMinutes: 30
+    });
+    await config.save();
   }
-  return await setJobConfig(body);
+  return config;
 }
 
-async function toggle(symbol) {
-  const current = await getJobConfig();
-  const idx = current.symbols.findIndex(s => s.symbol === symbol);
-  if (idx === -1) throw new Error('Símbolo não encontrado');
-  current.symbols[idx].enabled = !current.symbols[idx].enabled;
-  return await setJobConfig(current);
+async function updateConfig(body) {
+  if (body.enabled === undefined ||
+      !body.checkInterval ||
+      !body.symbols ||
+      !Array.isArray(body.symbols)) {
+    throw new Error('Required parameters: enabled (boolean), checkInterval (string), symbols (array)');
+  }
+
+  let config = await JobConfig.findOne();
+  if (!config) {
+    config = new JobConfig();
+  }
+
+  config.enabled = body.enabled;
+  config.checkInterval = body.checkInterval;
+  config.symbols = body.symbols;
+  config.minVolume24h = body.minVolume24h || 1000000;
+  config.cooldownMinutes = body.cooldownMinutes || 30;
+
+  await config.save();
+  return config;
+}
+
+async function toggleSymbol(symbol) {
+  const config = await status();
+  const idx = config.symbols.findIndex(s => s.symbol === symbol);
+  if (idx === -1) throw new Error('Symbol not found');
+  
+  config.symbols[idx].enabled = !config.symbols[idx].enabled;
+  await config.save();
+  return config;
 }
 
 async function addSymbol(body) {
-  const current = await getJobConfig();
-  if (!body.symbol) throw new Error('Símbolo obrigatório');
-  if (current.symbols.find(s => s.symbol === body.symbol)) {
-    throw new Error('Símbolo já existe');
-  }
-  current.symbols.push(body);
-  return await setJobConfig(current);
+  if (!body.symbol) throw new Error('Symbol is required');
+  
+  const config = await status();
+  const exists = config.symbols.find(s => s.symbol === body.symbol);
+  if (exists) throw new Error('Symbol already exists');
+  
+  config.symbols.push(body);
+  await config.save();
+  return config;
 }
 
 async function removeSymbol(symbol) {
-  const current = await getJobConfig();
-  current.symbols = current.symbols.filter(s => s.symbol !== symbol);
-  return await setJobConfig(current);
+  const config = await status();
+  const idx = config.symbols.findIndex(s => s.symbol === symbol);
+  if (idx === -1) throw new Error('Symbol not found');
+  
+  config.symbols.splice(idx, 1);
+  await config.save();
+  return config;
 }
 
 async function updateSymbol(symbol, body) {
-  const current = await getJobConfig();
-  const idx = current.symbols.findIndex(s => s.symbol === symbol);
-  if (idx === -1) throw new Error('Símbolo não encontrado');
-  current.symbols[idx] = { ...current.symbols[idx], ...body };
-  return await setJobConfig(current);
+  const config = await status();
+  const idx = config.symbols.findIndex(s => s.symbol === symbol);
+  if (idx === -1) throw new Error('Symbol not found');
+  
+  config.symbols[idx] = { ...config.symbols[idx], ...body };
+  await config.save();
+  return config;
 }
 
 async function getSymbol(symbol) {
-  const current = await getJobConfig();
-  const found = current.symbols.find(s => s.symbol === symbol);
-  if (!found) throw new Error('Símbolo não encontrado');
+  const config = await status();
+  const found = config.symbols.find(s => s.symbol === symbol);
+  if (!found) throw new Error('Symbol not found');
   return found;
-}
-
-async function statusDetailed() {
-  // Para exemplo, retorna o mesmo que status
-  return await getJobConfig();
 }
 
 module.exports = {
   status,
-  config,
-  toggle,
+  updateConfig,
+  toggleSymbol,
   addSymbol,
   removeSymbol,
   updateSymbol,
-  getSymbol,
-  statusDetailed
+  getSymbol
 }; 

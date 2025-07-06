@@ -48,7 +48,7 @@ const intervalSchema = {
 const jobRoutes = async (fastify, opts) => {
   fastify.get('/job/status', {
     schema: {
-      summary: 'Obter lista de jobs',
+      summary: 'Get job list',
       response: {
         200: {
           type: 'array',
@@ -67,12 +67,12 @@ const jobRoutes = async (fastify, opts) => {
   }, jobStatusHandler);
 
   fastify.post('/job/config', {
-    schema: { summary: 'Atualizar configuração do job', body: jobConfigSchema, response: { 200: jobConfigSchema } }
+    schema: { summary: 'Update job configuration', body: jobConfigSchema, response: { 200: jobConfigSchema } }
   }, jobConfigHandler);
 
   fastify.post('/job/interval', {
     schema: { 
-      summary: 'Atualizar apenas o intervalo do job', 
+      summary: 'Update only job interval', 
       body: intervalSchema, 
       response: { 200: jobConfigSchema } 
     }
@@ -80,7 +80,7 @@ const jobRoutes = async (fastify, opts) => {
 
   fastify.post('/job/toggle/:symbol', {
     schema: {
-      summary: 'Alternar enabled de um símbolo',
+      summary: 'Toggle symbol enabled status',
       params: {
         type: 'object',
         properties: { symbol: { type: 'string' } }
@@ -91,19 +91,19 @@ const jobRoutes = async (fastify, opts) => {
 
   fastify.post('/job/run', {
     schema: {
-      summary: 'Executar job para um símbolo',
+      summary: 'Run job for a symbol',
       body: symbolBodySchema,
       response: { 200: { type: 'object', properties: { success: { type: 'boolean' }, message: { type: 'string' } } } }
     }
   }, jobRunHandler);
 
   fastify.delete('/job/symbols/:symbol', {
-    schema: { summary: 'Remover símbolo', response: { 200: jobConfigSchema } }
+    schema: { summary: 'Remove symbol', response: { 200: jobConfigSchema } }
   }, jobRemoveSymbolHandler);
 
   fastify.get('/job/symbols/:symbol', {
     schema: {
-      summary: 'Obter configuração de símbolo',
+      summary: 'Get symbol configuration',
       response: {
         200: {
           type: 'object',
@@ -119,7 +119,7 @@ const jobRoutes = async (fastify, opts) => {
   }, jobGetSymbolHandler);
 
   fastify.get('/job/status/detailed', {
-    schema: { summary: 'Obter status detalhado do job', response: { 200: jobConfigSchema } }
+    schema: { summary: 'Get detailed job status', response: { 200: jobConfigSchema } }
   }, jobStatusDetailedHandler);
 };
 

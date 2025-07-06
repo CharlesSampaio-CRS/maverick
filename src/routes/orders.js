@@ -4,7 +4,7 @@ const Operation = require('../models/Operation');
 const ordersRoutes = async (fastify, opts) => {
   fastify.post('/buy', {
     schema: {
-      summary: 'Criar ordem de compra a mercado',
+      summary: 'Create market buy order',
       body: {
         type: 'object',
         required: ['symbol', 'amount'],
@@ -33,7 +33,7 @@ const ordersRoutes = async (fastify, opts) => {
 
   fastify.post('/sell', {
     schema: {
-      summary: 'Criar ordem de venda a mercado',
+      summary: 'Create market sell order',
       body: {
         type: 'object',
         required: ['symbol', 'amount'],
@@ -62,7 +62,7 @@ const ordersRoutes = async (fastify, opts) => {
 
   fastify.get('/operations/history', {
     schema: {
-      summary: 'Histórico de operações',
+      summary: 'Operations history',
       response: {
         200: {
           type: 'array',

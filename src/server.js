@@ -7,13 +7,13 @@ const cron = require('node-cron');
 const jobService = require('./services/jobService');
 const { jobRunHandler } = require('./controllers/jobController');
 
-// Importar rotas
+// Import routes
 const ordersRoutes = require('./routes/orders');
 const balanceRoutes = require('./routes/balance');
 const jobRoutes = require('./routes/job');
 const tickerRoutes = require('./routes/ticker');
 
-// Variável global para armazenar a referência do cron job
+// Global variable to store cron job reference
 let cronJob = null;
 
 const fastify = Fastify({ 
@@ -27,11 +27,11 @@ const fastify = Fastify({
     stream: {
       write: (message) => {
         const log = JSON.parse(message);
-        // Filtra o log "Server listening at"
+        // Filter "Server listening at" log
         if (log.msg && log.msg.includes('Server listening at')) {
-          return; // Não exibe este log
+          return; // Don't display this log
         }
-        // Exibe todos os outros logs
+        // Display all other logs
         console.log(log.msg || message);
       }
     }
@@ -44,20 +44,20 @@ fastify.register(fastifySwagger, {
   swagger: {
     info: {
       title: 'NovaDAX Bot API',
-      description: 'API para automação de ordens',
+      description: 'API for order automation',
       version: '1.0.0'
     }
   }
 });
 fastify.register(fastifySwaggerUi, { routePrefix: '/docs' });
 
-// Rotas
+// Routes
 fastify.register(ordersRoutes);
 fastify.register(balanceRoutes);
 fastify.register(jobRoutes);
 fastify.register(tickerRoutes);
 
-// Função para rodar todos os jobs habilitados automaticamente
+// Function to run all enabled jobs automatically
 async function runAllEnabledJobs() {
   try {
     const config = await jobService.status();
@@ -75,90 +75,104 @@ async function runAllEnabledJobs() {
       }
     }
   } catch (err) {
-    fastify.log.error(`[CRON][ERRO]: ${err.message}`);
+    fastify.log.error(`[CRON][ERROR]: ${err.message}`);
   }
 }
 
-// Função para parar o cron job atual
+// Function to stop current cron job
 function stopCronJob() {
   if (cronJob) {
     cronJob.stop();
     cronJob = null;
-    fastify.log.info('[CRON] Job agendado parado');
+    fastify.log.info('[CRON] Scheduled job stopped');
   }
 }
 
-// Função para criar um novo cron job
+// Function to create a new cron job
 function createCronJob(interval) {
-  // Para o job anterior se existir
+  // Stop previous job if exists
   if (cronJob) {
-    fastify.log.info('[CRON] Parando job anterior...');
+    fastify.log.info('[CRON] Stopping previous job...');
     cronJob.stop();
     cronJob = null;
   }
   
-  // Cria o novo job
+  // Create new job
   cronJob = cron.schedule(interval, runAllEnabledJobs, {
     scheduled: true,
     timezone: "America/Sao_Paulo"
   });
   
-  fastify.log.info(`[CRON] Novo job agendado com intervalo: ${interval}`);
+  fastify.log.info(`[CRON] New job scheduled with interval: ${interval}`);
   return cronJob;
 }
 
-// Função para validar formato cron
+// Function to validate cron format
 function validateCronFormat(expression) {
-  // Verifica se cron.validate está disponível
+  // Check if cron.validate is available
   if (typeof cron.validate === 'function') {
     return cron.validate(expression);
   }
   
-  // Validação manual básica
+  // Basic manual validation
   const cronRegex = /^(\*|([0-9]|1[0-9]|2[0-9]|3[0-9]|4[0-9]|5[0-9])|\*\/([0-9]|1[0-9]|2[0-9]|3[0-9]|4[0-9]|5[0-9])) (\*|([0-9]|1[0-9]|2[0-3])|\*\/([0-9]|1[0-9]|2[0-3])) (\*|([1-9]|1[0-9]|2[0-9]|3[0-1])|\*\/([1-9]|1[0-9]|2[0-9]|3[0-1])) (\*|([1-9]|1[0-2])|\*\/([1-9]|1[0-2])) (\*|([0-6])|\*\/([0-6]))$/;
   return cronRegex.test(expression);
 }
 
-// Agendamento dinâmico conforme checkInterval da configuração
+// Dynamic scheduling according to checkInterval configuration
 async function setupCronJob() {
-  const config = await jobService.status();
-  const interval = config.checkInterval || '*/3 * * * *';
-  createCronJob(interval);
+  try {
+    console.log('[CRON] Setting up cron job...');
+    const config = await jobService.status();
+    console.log('[CRON] Job config loaded:', { enabled: config.enabled, symbolsCount: config.symbols.length });
+    
+    const interval = config.checkInterval || '*/3 * * * *';
+    createCronJob(interval);
 
-  // Extrai intervalo em minutos ou horas
-  let intervalStr = interval;
-  if (/^\*\/(\d+) \* \* \* \*$/.test(interval)) {
-    const min = parseInt(interval.match(/^\*\/(\d+) \* \* \* \*$/)[1]);
-    intervalStr = `${min} min`;
-  } else if (/^0 \*\/(\d+) \* \* \*$/.test(interval)) {
-    const hr = parseInt(interval.match(/^0 \*\/(\d+) \* \* \*$/)[1]);
-    intervalStr = `${hr} h`;
-  }
-
-  for (const symbolConfig of config.symbols) {
-    if (symbolConfig.enabled) {
-      fastify.log.info(`[CRON] Symbol: ${symbolConfig.symbol} | Buy: ${symbolConfig.buyThreshold} | Sell: ${symbolConfig.sellThreshold} | Intervalo: ${intervalStr}`);
+    // Extract interval in minutes or hours
+    let intervalStr = interval;
+    if (/^\*\/(\d+) \* \* \* \*$/.test(interval)) {
+      const min = parseInt(interval.match(/^\*\/(\d+) \* \* \* \*$/)[1]);
+      intervalStr = `${min} min`;
+    } else if (/^0 \*\/(\d+) \* \* \*$/.test(interval)) {
+      const hr = parseInt(interval.match(/^0 \*\/(\d+) \* \* \*$/)[1]);
+      intervalStr = `${hr} h`;
     }
+
+    console.log(`[CRON] Job interval: ${intervalStr}`);
+    
+    if (config.symbols && config.symbols.length > 0) {
+      for (const symbolConfig of config.symbols) {
+        if (symbolConfig.enabled) {
+          console.log(`[CRON] Symbol: ${symbolConfig.symbol} | Buy: ${symbolConfig.buyThreshold} | Sell: ${symbolConfig.sellThreshold} | Interval: ${intervalStr}`);
+        }
+      }
+    } else {
+      console.log('[CRON] No symbols configured');
+    }
+  } catch (err) {
+    console.error('[CRON] Error setting up cron job:', err.message);
+    throw err;
   }
 }
 
-// Função para atualizar o agendamento em tempo real
+// Function to update scheduling in real time
 async function updateCronSchedule() {
   try {
-    fastify.log.info('[CRON] Iniciando atualização do agendamento...');
+    fastify.log.info('[CRON] Starting schedule update...');
     
     const config = await jobService.status();
     const interval = config.checkInterval || '*/3 * * * *';
     
-    // Valida o formato do cron
+    // Validate cron format
     if (!validateCronFormat(interval)) {
-      throw new Error(`Formato de intervalo inválido: ${interval}`);
+      throw new Error(`Invalid interval format: ${interval}`);
     }
     
-    fastify.log.info(`[CRON] Aplicando novo intervalo: ${interval}`);
+    fastify.log.info(`[CRON] Applying new interval: ${interval}`);
     createCronJob(interval);
     
-    // Extrai intervalo em minutos ou horas para log
+    // Extract interval in minutes or hours for log
     let intervalStr = interval;
     if (/^\*\/(\d+) \* \* \* \*$/.test(interval)) {
       const min = parseInt(interval.match(/^\*\/(\d+) \* \* \* \*$/)[1]);
@@ -168,23 +182,25 @@ async function updateCronSchedule() {
       intervalStr = `${hr} h`;
     }
     
-    fastify.log.info(`[CRON] Agendamento atualizado com sucesso para: ${intervalStr}`);
+    fastify.log.info(`[CRON] Schedule updated successfully to: ${intervalStr}`);
     return true;
   } catch (err) {
-    fastify.log.error(`[CRON][ERRO] Falha ao atualizar agendamento: ${err.message}`);
+    fastify.log.error(`[CRON][ERROR] Failed to update schedule: ${err.message}`);
     return false;
   }
 }
 
-// Exporta a função para ser usada pelos controllers
+// Export function to be used by controllers
 fastify.decorate('updateCronSchedule', updateCronSchedule);
 
-setupCronJob();
-
-// Inicialização
+// Initialization
 const start = async () => {
   try {
     await connectMongo();
+    
+    // Setup cron job after MongoDB connection is established
+    await setupCronJob();
+    
     await fastify.listen({ port: 3000, host: '0.0.0.0' });
   } catch (err) {
     fastify.log.error(err);

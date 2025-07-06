@@ -6,30 +6,32 @@ const API_SECRET = process.env.NOVADAX_API_SECRET;
 const BASE_URL = 'https://api.novadax.com';
 
 function signRequest(method, path, query = '', body = null) {
-  const timestamp = Date.now().toString();
+  const timestamp = Date.now();
   let signStr;
+  
   if (method === 'GET') {
-    const sortedQuery = query ? query.split('&').sort().join('&') : '';
+    const sortedQuery = query.split('&').sort().join('&');
     signStr = `${method}\n${path}\n${sortedQuery}\n${timestamp}`;
   } else {
-    const content = body ? JSON.stringify(body) : '';
+    const content = JSON.stringify(body);
     const md5Hash = require('crypto').createHash('md5').update(content).digest('hex');
     signStr = `${method}\n${path}\n${md5Hash}\n${timestamp}`;
   }
+  
   const signature = require('crypto')
     .createHmac('sha256', API_SECRET)
     .update(signStr)
     .digest('hex');
   const headers = {
-    'X-Nova-Access-Key': API_KEY,
-    'X-Nova-Timestamp': timestamp,
-    'X-Nova-Signature': signature,
+    'ACCESS-KEY': API_KEY,
+    'ACCESS-SIGN': signature,
+    'ACCESS-TIMESTAMP': timestamp
   };
   if (method !== 'GET') headers['Content-Type'] = 'application/json';
   return headers;
 }
 
-async function buy(symbol, amount) {
+async function createBuyOrder(symbol, amount) {
   const op = await Operation.create({ symbol, type: 'buy', amount, status: 'pending' });
   const path = '/v1/orders/create';
   const url = BASE_URL + path;
@@ -55,7 +57,7 @@ async function buy(symbol, amount) {
   }
 }
 
-async function sell(symbol, amount) {
+async function createSellOrder(symbol, amount) {
   const op = await Operation.create({ symbol, type: 'sell', amount, status: 'pending' });
   const path = '/v1/orders/create';
   const url = BASE_URL + path;
@@ -82,6 +84,6 @@ async function sell(symbol, amount) {
 }
 
 module.exports = {
-  buy,
-  sell
+  createBuyOrder,
+  createSellOrder
 }; 

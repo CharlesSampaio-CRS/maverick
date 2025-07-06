@@ -5,148 +5,169 @@ const ordersService = require('../services/ordersService');
 const Operation = require('../models/Operation');
 const cron = require('node-cron');
 
+// In-memory storage for last execution times
+const lastExecutions = new Map();
+
 async function jobStatusHandler(request, reply) {
   try {
-    const result = await jobService.status();
-    return reply.send(result.symbols || []);
+    const config = await jobService.status();
+    return reply.send(config.symbols);
   } catch (err) {
     return reply.status(500).send({ error: err.message });
   }
 }
+
 async function jobToggleHandler(request, reply) {
   try {
     const { symbol } = request.params;
-    const result = await jobService.toggle(symbol);
-    return reply.send(result);
+    const config = await jobService.toggleSymbol(symbol);
+    return reply.send(config);
   } catch (err) {
     return reply.status(500).send({ error: err.message });
   }
 }
+
 async function jobRunHandler(request, reply) {
   try {
     const { symbol } = request.body;
+    const nowStr = new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).replace('T', ' ');
     if (!symbol) {
-      console.log('[JOB] Falha | Symbol não informado');
-      return reply.status(400).send({ error: 'Parâmetro symbol obrigatório' });
+      console.log(`[JOB] Failure | Symbol not provided | Date: ${nowStr}`);
+      return reply.status(400).send({ error: 'Symbol is required' });
     }
-    // 1. Get symbol config
-    const config = await jobService.getSymbol(symbol);
-    if (!config.enabled) {
-      console.log(`[JOB] Não executado | Symbol: ${symbol} | Motivo: símbolo desabilitado`);
-      return reply.send({ success: false, message: 'Símbolo desabilitado' });
+
+    // 1. Get job configuration
+    const config = await jobService.status();
+    const symbolConfig = config.symbols.find(s => s.symbol === symbol);
+    
+    if (!symbolConfig || !symbolConfig.enabled) {
+      console.log(`[JOB] Not executed | Symbol: ${symbol} | Reason: symbol disabled | Date: ${nowStr}`);
+      return reply.send({ success: false, message: 'Symbol is disabled' });
     }
+
     // 2. Get ticker data
-    const ticker = await tickerService.get(symbol);
+    const ticker = await tickerService.getTicker(symbol);
     if (!ticker.success) {
-      console.log(`[JOB] Não executado | Symbol: ${symbol} | Motivo: erro ao obter ticker`);
-      return reply.send({ success: false, message: 'Erro ao obter ticker', details: ticker });
+      console.log(`[JOB] Not executed | Symbol: ${symbol} | Reason: error getting ticker | Date: ${nowStr}`);
+      return reply.send({ success: false, message: 'Error getting ticker data' });
     }
-    // 3. Check volume
-    if (ticker.quoteVolume24h < (config.minVolume24h || 0)) {
-      console.log(`[JOB] Não executado | Symbol: ${symbol} | Motivo: volume 24h insuficiente | Variação 24h: ${ticker.changePercent24h}`);
-      return reply.send({ success: false, message: 'Volume 24h insuficiente' });
+
+    // 3. Check cooldown
+    const lastExec = lastExecutions.get(symbol) || 0;
+    const cooldown = (config.cooldownMinutes || 30) * 60 * 1000;
+    
+    if (Date.now() - lastExec < cooldown) {
+      console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Reason: cooldown active | Date: ${nowStr}`);
+      return reply.send({ success: false, message: 'Cooldown active, wait before operating again.' });
     }
-    // 4. Check cooldown
-    const lastOp = await Operation.findOne({ symbol }).sort({ createdAt: -1 });
-    if (lastOp) {
-      const cooldown = (config.cooldownMinutes || 30) * 60 * 1000;
-      if (Date.now() - lastOp.createdAt.getTime() < cooldown) {
-        console.log(`[JOB] Não executado | Symbol: ${symbol} | Motivo: cooldown ativo | Variação 24h: ${ticker.changePercent24h}`);
-        return reply.send({ success: false, message: 'Cooldown ativo, aguarde antes de operar novamente.' });
-      }
-    }
-    // 5. Decide buy/sell
+
+    // 4. Check thresholds and decide action
     const change = parseFloat(ticker.changePercent24h);
     let action = null;
+    
     if (change <= config.buyThreshold) action = 'buy';
     else if (change >= config.sellThreshold) action = 'sell';
-    else {
-      console.log(`[JOB] Não executado | Symbol: ${symbol} | Variação 24h: ${ticker.changePercent24h} | Nenhuma condição de compra/venda atingida`);
-      return reply.send({ success: false, message: 'Nenhuma condição de compra/venda atingida.' });
+    
+    if (!action) {
+      console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | No buy/sell condition met | Date: ${nowStr}`);
+      return reply.send({ success: false, message: 'No buy/sell condition met.' });
     }
-    // 6. Get balance and calculate amount
-    let amount;
+
+    // 5. Execute order
     if (action === 'buy') {
-      const brl = await balanceService.getByCurrency('BRL');
-      const max = ((config.maxInvestmentPercent || 30) / 100) * parseFloat(brl.available || 0);
-      amount = Math.max(Math.floor(max), 10); // mínimo R$10
+      // Get BRL balance
+      const balance = await balanceService.getBalance('BRL');
+      const max = parseFloat(balance.available);
+      let amount = Math.max(Math.floor(max), 10); // minimum R$10
+      
       if (amount < 10) {
-        console.log(`[JOB] Não executado | Symbol: ${symbol} | Motivo: saldo BRL insuficiente | Variação 24h: ${ticker.changePercent24h}`);
-        return reply.send({ success: false, message: 'Saldo BRL insuficiente para comprar.' });
+        console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Reason: insufficient BRL balance | Date: ${nowStr}`);
+        return reply.send({ success: false, message: 'Insufficient BRL balance to buy.' });
       }
-      const op = await ordersService.buy(symbol, amount);
-      console.log(`[JOB] Executado | Symbol: ${symbol} | Ação: COMPRA | Valor: R$${amount} | Variação 24h: ${ticker.changePercent24h}`);
-      return reply.send({ success: op.status === 'success', message: 'Compra executada', op });
+      
+      const op = await ordersService.createBuyOrder(symbol, amount);
+      console.log(`[JOB] Executed | Symbol: ${symbol} | Action: BUY | Value: R$${amount} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Date: ${nowStr}`);
+      return reply.send({ success: op.status === 'success', message: 'Buy order executed', op });
     } else {
-      const coin = symbol.split('_')[0];
-      const bal = await balanceService.getByCurrency(coin);
-      amount = (parseFloat(bal.available || 0)) * 0.7; // vende 70%
-      if (amount < 0.0001) {
-        console.log(`[JOB] Não executado | Symbol: ${symbol} | Motivo: saldo insuficiente para vender | Variação 24h: ${ticker.changePercent24h}`);
-        return reply.send({ success: false, message: 'Saldo insuficiente para vender.' });
+      // Get base currency balance
+      const baseCurrency = symbol.split('_')[0];
+      const balance = await balanceService.getBalance(baseCurrency);
+      const amount = parseFloat(balance.available);
+      
+      if (amount <= 0) {
+        console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Reason: insufficient balance to sell | Date: ${nowStr}`);
+        return reply.send({ success: false, message: 'Insufficient balance to sell.' });
       }
-      const op = await ordersService.sell(symbol, amount);
-      console.log(`[JOB] Executado | Symbol: ${symbol} | Ação: VENDA | Valor: ${amount} | Variação 24h: ${ticker.changePercent24h}`);
-      return reply.send({ success: op.status === 'success', message: 'Venda executada', op });
+      
+      const op = await ordersService.createSellOrder(symbol, amount);
+      console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL | Value: ${amount} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Date: ${nowStr}`);
+      return reply.send({ success: op.status === 'success', message: 'Sell order executed', op });
     }
+
   } catch (err) {
-    console.error(`[JOB] Erro | ${err.message}`);
+    console.error(`[JOB] Error: ${err.message}`);
     return reply.status(500).send({ error: err.message });
   }
 }
+
 async function jobConfigHandler(request, reply) {
   try {
-    const result = await jobService.config(request.body);
+    const config = await jobService.updateConfig(request.body);
     
-    // Atualiza o agendamento do cron job em tempo real
+    // Update cron schedule if available
     if (request.server.updateCronSchedule) {
       await request.server.updateCronSchedule();
     }
     
-    return reply.send(result);
+    return reply.send(config);
   } catch (err) {
     return reply.status(500).send({ error: err.message });
   }
 }
+
 async function jobAddSymbolHandler(request, reply) {
   try {
-    const result = await jobService.addSymbol(request.body);
-    return reply.send(result);
+    const config = await jobService.addSymbol(request.body);
+    return reply.send(config);
   } catch (err) {
     return reply.status(500).send({ error: err.message });
   }
 }
+
 async function jobRemoveSymbolHandler(request, reply) {
   try {
     const { symbol } = request.params;
-    const result = await jobService.removeSymbol(symbol);
-    return reply.send(result);
+    const config = await jobService.removeSymbol(symbol);
+    return reply.send(config);
   } catch (err) {
     return reply.status(500).send({ error: err.message });
   }
 }
+
 async function jobUpdateSymbolHandler(request, reply) {
   try {
     const { symbol } = request.params;
-    const result = await jobService.updateSymbol(symbol, request.body);
-    return reply.send(result);
+    const config = await jobService.updateSymbol(symbol, request.body);
+    return reply.send(config);
   } catch (err) {
     return reply.status(500).send({ error: err.message });
   }
 }
+
 async function jobGetSymbolHandler(request, reply) {
   try {
     const { symbol } = request.params;
-    const result = await jobService.getSymbol(symbol);
-    return reply.send(result);
+    const symbolConfig = await jobService.getSymbol(symbol);
+    return reply.send(symbolConfig);
   } catch (err) {
-    return reply.status(404).send({ error: err.message });
+    return reply.status(500).send({ error: err.message });
   }
 }
+
 async function jobStatusDetailedHandler(request, reply) {
   try {
-    const result = await jobService.statusDetailed();
-    return reply.send(result);
+    const config = await jobService.status();
+    return reply.send(config);
   } catch (err) {
     return reply.status(500).send({ error: err.message });
   }
@@ -156,28 +177,22 @@ async function jobUpdateIntervalHandler(request, reply) {
   try {
     const { checkInterval } = request.body;
     
-    // Valida o formato do cron
+    // Validate cron format
     if (!cron.validate(checkInterval)) {
-      return reply.status(400).send({ error: 'Formato de intervalo inválido. Use formato cron (ex: */5 * * * *)' });
+      return reply.status(400).send({ error: 'Invalid interval format. Use cron format (ex: */5 * * * *)' });
     }
     
-    // Obtém a configuração atual
-    const currentConfig = await jobService.status();
-    
-    // Atualiza apenas o intervalo
-    const updatedConfig = {
-      ...currentConfig,
+    // Update configuration
+    const config = await jobService.updateConfig({
       checkInterval
-    };
+    });
     
-    const result = await jobService.config(updatedConfig);
-    
-    // Atualiza o agendamento do cron job em tempo real
+    // Update cron schedule if available
     if (request.server.updateCronSchedule) {
       await request.server.updateCronSchedule();
     }
     
-    return reply.send(result);
+    return reply.send(config);
   } catch (err) {
     return reply.status(500).send({ error: err.message });
   }

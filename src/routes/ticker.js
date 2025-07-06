@@ -3,7 +3,7 @@ const { tickerHandler } = require('../controllers/tickerController');
 const tickerRoutes = async (fastify, opts) => {
   fastify.get('/ticker/:symbol', {
     schema: {
-      summary: 'Obter dados de preço e variação de um símbolo',
+      summary: 'Get price and variation data for a symbol',
       params: {
         type: 'object',
         properties: {

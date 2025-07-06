@@ -1,9 +1,13 @@
 const mongoose = require('mongoose');
 
 async function connectMongo() {
-  const uri = process.env.MONGO_URI;
-  await mongoose.connect(uri);
-  // Removido o log de conexão
+  try {
+    await mongoose.connect(process.env.MONGODB_URI);
+    // Connection log removed
+  } catch (err) {
+    console.error('MongoDB connection error:', err);
+    throw err;
+  }
 }
 
 module.exports = {
