@@ -21,9 +21,9 @@ function signRequest(method, path, query = '', body = null) {
     .update(signStr)
     .digest('hex');
   const headers = {
-    'ACCESS-KEY': API_KEY,
-    'ACCESS-SIGN': signature,
-    'ACCESS-TIMESTAMP': timestamp
+    'X-Nova-Access-Key': API_KEY,
+    'X-Nova-Signature': signature,
+    'X-Nova-Timestamp': timestamp
   };
   if (method !== 'GET') headers['Content-Type'] = 'application/json';
   return headers;

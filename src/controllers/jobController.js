@@ -7,6 +7,8 @@ const cron = require('node-cron');
 
 // In-memory storage for last execution times
 const lastExecutions = new Map();
+// In-memory storage for partial sales state
+const partialSales = new Map();
 
 async function jobStatusHandler(request, reply) {
   try {
@@ -98,10 +100,37 @@ async function jobRunHandler(request, reply) {
         console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Reason: insufficient balance to sell | Date: ${nowStr}`);
         return reply.send({ success: false, message: 'Insufficient balance to sell.' });
       }
-      
-      const op = await ordersService.createSellOrder(symbol, amount);
-      console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL | Value: ${amount} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Date: ${nowStr}`);
-      return reply.send({ success: op.status === 'success', message: 'Sell order executed', op });
+
+      // Partial sale logic
+      let partial = partialSales.get(symbol);
+      if (!partial) {
+        // First sale: sell 50%, store price
+        const sellAmount = amount * 0.5;
+        const op = await ordersService.createSellOrder(symbol, sellAmount);
+        if (op.status === 'success') {
+          partialSales.set(symbol, { firstSellPrice: parseFloat(ticker.lastPrice), remaining: amount - sellAmount });
+          console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL 50% | Value: ${sellAmount} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Date: ${nowStr}`);
+          return reply.send({ success: true, message: 'Sell order (50%) executed', op });
+        } else {
+          return reply.send({ success: false, message: 'Sell order (50%) failed', op });
+        }
+      } else {
+        // Second sale: only if price is higher than first sale
+        if (parseFloat(ticker.lastPrice) > partial.firstSellPrice && partial.remaining > 0) {
+          const op = await ordersService.createSellOrder(symbol, partial.remaining);
+          if (op.status === 'success') {
+            partialSales.delete(symbol); // Reset state
+            console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL REMAINING 50% | Value: ${partial.remaining} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Date: ${nowStr}`);
+            return reply.send({ success: true, message: 'Sell order (remaining 50%) executed', op });
+          } else {
+            return reply.send({ success: false, message: 'Sell order (remaining 50%) failed', op });
+          }
+        } else {
+          // Waiting for higher price
+          console.log(`[JOB] Not executed | Symbol: ${symbol} | Waiting for higher price to sell remaining 50% | Last sell price: ${partial.firstSellPrice} | Current price: ${ticker.lastPrice} | Date: ${nowStr}`);
+          return reply.send({ success: false, message: 'Waiting for higher price to sell remaining 50%.' });
+        }
+      }
     }
 
   } catch (err) {
