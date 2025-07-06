@@ -5,12 +5,11 @@ async function tickerHandler(request, reply) {
   if (!symbol) {
     return reply.status(400).send({ error: 'Parâmetro symbol obrigatório' });
   }
-  try {
-    const result = await tickerService.get(symbol);
-    return reply.send(result);
-  } catch (err) {
-    return reply.status(500).send({ error: 'Erro ao obter ticker', details: err.message });
+  const result = await tickerService.get(symbol);
+  if (!result.success) {
+    return reply.status(500).send({ error: result.error, details: result.details });
   }
+  return reply.send(result);
 }
 
 module.exports = {

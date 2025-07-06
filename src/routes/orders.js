@@ -1,3 +1,6 @@
+const { buyHandler, sellHandler } = require('../controllers/ordersController');
+const Operation = require('../models/Operation');
+
 const ordersRoutes = async (fastify, opts) => {
   fastify.post('/buy', {
     schema: {
@@ -10,12 +13,23 @@ const ordersRoutes = async (fastify, opts) => {
           amount: { type: 'number' }
         }
       },
-      response: { 200: { type: 'object' } }
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            _id: { type: 'string' },
+            symbol: { type: 'string' },
+            type: { type: 'string' },
+            amount: { type: 'number' },
+            price: { type: 'number' },
+            status: { type: 'string' },
+            response: { type: 'object' },
+            createdAt: { type: 'string' }
+          }
+        }
+      }
     }
-  }, async (request, reply) => {
-    // A lógica real ficará no server.js por enquanto
-    return fastify.buyHandler(request, reply);
-  });
+  }, buyHandler);
 
   fastify.post('/sell', {
     schema: {
@@ -28,14 +42,46 @@ const ordersRoutes = async (fastify, opts) => {
           amount: { type: 'number' }
         }
       },
-      response: { 200: { type: 'object' } }
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            _id: { type: 'string' },
+            symbol: { type: 'string' },
+            type: { type: 'string' },
+            amount: { type: 'number' },
+            price: { type: 'number' },
+            status: { type: 'string' },
+            response: { type: 'object' },
+            createdAt: { type: 'string' }
+          }
+        }
+      }
     }
-  }, async (request, reply) => {
-    return fastify.sellHandler(request, reply);
-  });
+  }, sellHandler);
 
   fastify.get('/operations/history', {
-    schema: { summary: 'Histórico de operações', response: { 200: { type: 'array', items: { type: 'object' } } } }
+    schema: {
+      summary: 'Histórico de operações',
+      response: {
+        200: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              _id: { type: 'string' },
+              symbol: { type: 'string' },
+              type: { type: 'string' },
+              amount: { type: 'number' },
+              price: { type: 'number' },
+              status: { type: 'string' },
+              response: { type: 'object' },
+              createdAt: { type: 'string' }
+            }
+          }
+        }
+      }
+    }
   }, async (request, reply) => {
     const history = await Operation.find().sort({ createdAt: -1 }).limit(100);
     return reply.send(history);

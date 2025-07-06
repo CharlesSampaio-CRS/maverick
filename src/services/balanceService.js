@@ -31,17 +31,26 @@ async function getAll() {
   const path = '/v1/account/getBalance';
   const url = BASE_URL + path;
   const headers = signRequest('GET', path);
-  const res = await axios.get(url, { headers });
-  return res.data;
+  try {
+    const res = await axios.get(url, { headers });
+    console.log('NovaDAX balance response:', res.data);
+    if (!res.data || !res.data.data) {
+      throw new Error('Resposta inesperada da NovaDAX');
+    }
+    // Filtra apenas moedas com saldo > 0
+    const filtered = res.data.data.filter(w => (parseFloat(w.available) || 0) + (parseFloat(w.frozen) || 0) > 0);
+    return { success: true, balances: filtered };
+  } catch (err) {
+    console.error('Erro ao consultar saldo NovaDAX:', err.response?.data || err.message);
+    return { success: false, error: 'Erro ao consultar saldo NovaDAX', details: err.response?.data || err.message };
+  }
 }
 
 async function getByCurrency(currency) {
   const all = await getAll();
-  if (all && all.data) {
-    const wallet = all.data.find(w => w.currency.toUpperCase() === currency.toUpperCase());
-    return wallet || { currency, available: 0 };
-  }
-  return { currency, available: 0 };
+  if (!all.success) return all;
+  const wallet = all.balances.find(w => w.currency.toUpperCase() === currency.toUpperCase());
+  return wallet || { currency, available: 0 };
 }
 
 module.exports = {

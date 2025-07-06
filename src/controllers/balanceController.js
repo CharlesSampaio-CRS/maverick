@@ -1,12 +1,11 @@
 const balanceService = require('../services/balanceService');
 
 async function balanceHandler(request, reply) {
-  try {
-    const result = await balanceService.getAll();
-    return reply.send(result);
-  } catch (err) {
-    return reply.status(500).send({ error: 'Erro ao obter saldo', details: err.message });
+  const result = await balanceService.getAll();
+  if (!result.success) {
+    return reply.status(500).send({ error: result.error, details: result.details });
   }
+  return reply.send(result.balances);
 }
 
 async function balanceCurrencyHandler(request, reply) {
@@ -14,15 +13,14 @@ async function balanceCurrencyHandler(request, reply) {
   if (!currency) {
     return reply.status(400).send({ error: 'Parâmetro currency obrigatório' });
   }
-  try {
-    const result = await balanceService.getByCurrency(currency);
-    if (!result || !result.currency) {
-      return reply.status(404).send({ error: 'Moeda não encontrada' });
-    }
-    return reply.send(result);
-  } catch (err) {
-    return reply.status(500).send({ error: 'Erro ao obter saldo da moeda', details: err.message });
+  const result = await balanceService.getByCurrency(currency);
+  if (result.success === false) {
+    return reply.status(500).send({ error: result.error, details: result.details });
   }
+  if (!result || !result.currency) {
+    return reply.status(404).send({ error: 'Moeda não encontrada' });
+  }
+  return reply.send(result);
 }
 
 module.exports = {

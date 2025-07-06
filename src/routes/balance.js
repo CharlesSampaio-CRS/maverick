@@ -1,12 +1,25 @@
+const { balanceHandler, balanceCurrencyHandler } = require('../controllers/balanceController');
+
 const balanceRoutes = async (fastify, opts) => {
   fastify.get('/balance', {
     schema: {
       summary: 'Obter saldo de todas as moedas',
-      response: { 200: { type: 'object' } }
+      response: {
+        200: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              currency: { type: 'string' },
+              available: { type: 'string' },
+              frozen: { type: 'string' },
+              total: { type: 'string' }
+            }
+          }
+        }
+      }
     }
-  }, async (request, reply) => {
-    return fastify.balanceHandler(request, reply);
-  });
+  }, balanceHandler);
 
   fastify.get('/balance/:currency', {
     schema: {
@@ -17,11 +30,19 @@ const balanceRoutes = async (fastify, opts) => {
           currency: { type: 'string' }
         }
       },
-      response: { 200: { type: 'object' } }
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            currency: { type: 'string' },
+            available: { type: 'string' },
+            frozen: { type: 'string' },
+            total: { type: 'string' }
+          }
+        }
+      }
     }
-  }, async (request, reply) => {
-    return fastify.balanceCurrencyHandler(request, reply);
-  });
+  }, balanceCurrencyHandler);
 };
 
 module.exports = balanceRoutes; 

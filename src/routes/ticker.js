@@ -1,3 +1,5 @@
+const { tickerHandler } = require('../controllers/tickerController');
+
 const tickerRoutes = async (fastify, opts) => {
   fastify.get('/ticker/:symbol', {
     schema: {
@@ -8,11 +10,28 @@ const tickerRoutes = async (fastify, opts) => {
           symbol: { type: 'string' }
         }
       },
-      response: { 200: { type: 'object' } }
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            symbol: { type: 'string' },
+            lastPrice: { type: 'string' },
+            bid: { type: 'string' },
+            ask: { type: 'string' },
+            high24h: { type: 'string' },
+            low24h: { type: 'string' },
+            open24h: { type: 'string' },
+            baseVolume24h: { type: 'string' },
+            quoteVolume24h: { type: 'string' },
+            change24h: { type: 'string' },
+            changePercent24h: { type: 'string' },
+            timestamp: { type: 'number' }
+          }
+        }
+      }
     }
-  }, async (request, reply) => {
-    return fastify.tickerHandler(request, reply);
-  });
+  }, tickerHandler);
 };
 
 module.exports = tickerRoutes; 
