@@ -84,6 +84,24 @@ const saleStrategyConfigUpdateSchema = {
   }
 };
 
+const profitSummarySchema = {
+  type: 'object',
+  properties: {
+    totalProfit: { type: 'number' },
+    bySymbol: {
+      type: 'object',
+      additionalProperties: { type: 'number' }
+    },
+    totalProfitBRL: { type: 'string' },
+    bySymbolBRL: {
+      type: 'object',
+      additionalProperties: { type: 'string' }
+    },
+    totalGain: { type: 'number' },
+    totalLoss: { type: 'number' }
+  }
+};
+
 const jobRoutes = async (fastify, opts) => {
   fastify.get('/job/status', {
     schema: {
@@ -176,6 +194,13 @@ const jobRoutes = async (fastify, opts) => {
       response: { 200: saleStrategyConfigSchema }
     }
   }, require('../controllers/jobController').updateSaleStrategyConfigHandler);
+
+  fastify.get('/job/profit-summary', {
+    schema: {
+      summary: 'Get total profit/loss summary',
+      response: { 200: profitSummarySchema }
+    }
+  }, require('../controllers/jobController').getProfitSummaryHandler);
 };
 
 module.exports = jobRoutes; 

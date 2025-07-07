@@ -494,6 +494,40 @@ async function updateSaleStrategyConfigHandler(request, reply) {
   }
 }
 
+// Endpoint to get total profit/loss
+async function getProfitSummaryHandler(request, reply) {
+  try {
+    // Get all successful sell operations with profit
+    const sells = await Operation.find({ 
+      type: 'sell', 
+      status: 'success', 
+      profit: { $exists: true } 
+    });
+    
+    // Calculate totals
+    let totalProfit = 0;
+    const bySymbol = {};
+    
+    for (const op of sells) {
+      totalProfit += op.profit || 0;
+      if (!bySymbol[op.symbol]) bySymbol[op.symbol] = 0;
+      bySymbol[op.symbol] += op.profit || 0;
+    }
+    
+    return reply.send({
+      totalProfit: totalProfit.toFixed(2),
+      bySymbol: Object.fromEntries(
+        Object.entries(bySymbol).map(([k, v]) => [k, v.toFixed(2)])
+      ),
+      totalGain: totalProfit > 0 ? totalProfit.toFixed(2) : "0.00",
+      totalLoss: totalProfit < 0 ? totalProfit.toFixed(2) : "0.00",
+      operationsCount: sells.length
+    });
+  } catch (err) {
+    return reply.status(500).send({ error: err.message });
+  }
+}
+
 module.exports = {
   jobStatusHandler,
   jobToggleHandler,
@@ -507,5 +541,6 @@ module.exports = {
   jobUpdateIntervalHandler,
   jobStrategyStatusHandler,
   getSaleStrategyConfigHandler,
-  updateSaleStrategyConfigHandler
+  updateSaleStrategyConfigHandler,
+  getProfitSummaryHandler,
 }; 

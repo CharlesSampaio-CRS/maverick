@@ -84,12 +84,12 @@ async function createBuyOrder(symbol) {
 }
 
 async function createSellOrder(symbol, amount) {
-  // Validação do amount
+  // Validation of amount
   if (!amount || parseFloat(amount) <= 0) {
     throw new Error('Invalid amount: must be greater than 0');
   }
 
-  const amountStr = parseFloat(amount).toFixed(8); // 8 casas para criptomoedas
+  const amountStr = parseFloat(amount).toFixed(8); // 8 decimal places for crypto
   console.log(`[ORDERS] Creating SELL order for ${symbol} amount: ${amountStr}`);
 
   const op = await Operation.create({
@@ -104,15 +104,15 @@ async function createSellOrder(symbol, amount) {
   const body = {
     symbol,
     side: 'SELL',
-    type: 'MARKET', // Garantindo venda a mercado
+    type: 'MARKET', // Ensure market sell
     amount: amountStr
   };
 
-  // Log adicional para confirmar configuração
+  // Additional log to confirm configuration
   console.log(`[ORDERS] Order configuration:`, {
     symbol,
     side: body.side,
-    type: body.type, // Deve ser 'MARKET'
+    type: body.type, // Should be 'MARKET'
     amount: body.amount
   });
 
@@ -122,7 +122,7 @@ async function createSellOrder(symbol, amount) {
 
     console.log(`[ORDERS] API SELL Response:`, res.data);
 
-    // Verificação adicional do tipo de ordem na resposta
+    // Additional check for order type in response
     if (res.data?.data?.type && res.data.data.type !== 'MARKET') {
       console.warn(`[ORDERS] Warning: Order type mismatch. Expected MARKET, got ${res.data.data.type}`);
     }
@@ -130,8 +130,28 @@ async function createSellOrder(symbol, amount) {
     op.status = res.data?.success || res.data?.code === 'A10000' ? 'success' : 'failed';
     op.price = res.data?.data?.price || null;
     op.response = res.data;
-    await op.save();
 
+    // --- PROFIT/LOSS CALCULATION ---
+    if (op.status === 'success' && op.price) {
+      // Find the most recent buy operation for this symbol
+      const lastBuy = await Operation.findOne({
+        symbol,
+        type: 'buy',
+        status: 'success'
+      }).sort({ createdAt: -1 });
+      
+      if (lastBuy && lastBuy.price) {
+        op.buyPrice = lastBuy.price;
+        op.profit = (op.price - lastBuy.price) * parseFloat(amount);
+        console.log(`[ORDERS] Profit calculation: Sell at ${op.price}, Buy at ${lastBuy.price}, Profit: ${op.profit}`);
+      } else {
+        op.profit = 0;
+        console.log(`[ORDERS] No buy operation found for profit calculation`);
+      }
+    }
+    // --- END PROFIT/LOSS CALCULATION ---
+
+    await op.save();
     return op;
   } catch (error) {
     console.error(`[ORDERS] SELL Error:`, {

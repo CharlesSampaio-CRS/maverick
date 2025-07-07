@@ -7,6 +7,8 @@ const OperationSchema = new mongoose.Schema({
   price: { type: Number },
   status: { type: String, default: 'pending' },
   response: { type: Object },
+  buyPrice: { type: Number },
+  profit: { type: Number },
   createdAt: { type: Date, default: Date.now }
 });
 
