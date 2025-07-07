@@ -1,6 +1,42 @@
-# NovaDAX Trading Bot API
+# NovaDAX Bot API
 
-API para automatizar operações de trading na NovaDAX com monitoramento automático de variações de preço para múltiplos símbolos.
+API Node.js para automação de ordens na NovaDAX, com Fastify, MongoDB e Swagger.
+
+## Pré-requisitos
+- Node.js 18+
+- MongoDB
+
+## Instalação
+```bash
+git clone ...
+cd ordersautomstic
+npm install
+cp .env.example .env # Edite com suas chaves
+```
+
+## Configuração
+Edite o arquivo `.env` com suas chaves da NovaDAX e string do MongoDB.
+
+## Rodando o projeto
+```bash
+npm start
+```
+
+Acesse a documentação Swagger em: [http://localhost:3000/docs](http://localhost:3000/docs)
+
+## Endpoints principais
+
+- **POST /buy** — Criar ordem de compra
+- **POST /sell** — Criar ordem de venda
+- **GET /balance** — Listar saldos
+- **GET /balance/:currency** — Saldo de uma moeda
+- **GET /ticker/:symbol** — Preço e variação
+- **GET /operations/history** — Histórico de operações
+
+## Exemplo de requisição de compra
+```bash
+curl -X POST http://localhost:3000/buy -H 'Content-Type: application/json' -d '{"symbol":"MOG_BRL","amount":100}'
+```
 
 ## Funcionalidades
 
@@ -115,6 +151,48 @@ curl -X PUT http://localhost:3000/job/symbols/BTC_BRL \
   }'
 ```
 
+#### Atualizar intervalo do job em tempo real:
+```bash
+# Alterar para executar a cada 5 minutos
+curl -X POST http://localhost:3000/job/interval \
+  -H "Content-Type: application/json" \
+  -d '{
+    "checkInterval": "*/5 * * * *"
+  }'
+
+# Alterar para executar a cada hora
+curl -X POST http://localhost:3000/job/interval \
+  -H "Content-Type: application/json" \
+  -d '{
+    "checkInterval": "0 * * * *"
+  }'
+
+# Alterar para executar a cada 2 horas
+curl -X POST http://localhost:3000/job/interval \
+  -H "Content-Type: application/json" \
+  -d '{
+    "checkInterval": "0 */2 * * *"
+  }'
+```
+
+#### Atualizar toda a configuração do job:
+```bash
+curl -X POST http://localhost:3000/job/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enabled": true,
+    "checkInterval": "*/10 * * * *",
+    "symbols": [
+      {
+        "symbol": "BTC_BRL",
+        "buyThreshold": -15,
+        "sellThreshold": 20,
+        "enabled": true
+      }
+    ]
+  }'
+```
+
 #### Remover símbolo:
 ```bash
 curl -X DELETE http://localhost:3000/job/symbols/ETH_BRL
@@ -123,28 +201,6 @@ curl -X DELETE http://localhost:3000/job/symbols/ETH_BRL
 #### Obter configuração de um símbolo:
 ```bash
 curl http://localhost:3000/job/symbols/BTC_BRL
-```
-
-#### Atualizar toda a configuração:
-```bash
-curl -X POST http://localhost:3000/job/config \
-  -H "Content-Type: application/json" \
-  -d '{
-    "symbols": [
-      {
-        "symbol": "MOG_BRL",
-        "buyThreshold": -10,
-        "sellThreshold": 10,
-        "enabled": true
-      },
-      {
-        "symbol": "BTC_BRL",
-        "buyThreshold": -15,
-        "sellThreshold": 15,
-        "enabled": true
-      }
-    ]
-  }'
 ```
 
 ## Instalação
