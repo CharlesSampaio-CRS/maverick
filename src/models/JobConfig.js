@@ -14,6 +14,6 @@ const JobConfigSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
-const JobConfig = mongoose.model('JobConfig', JobConfigSchema);
+const JobConfig = mongoose.model('Config', JobConfigSchema);
 
 module.exports = JobConfig; 
