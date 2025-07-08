@@ -305,14 +305,17 @@ async function jobRunHandler(request, reply) {
     
     if (!action) {
       const reason = 'no buy/sell condition met';
-      console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | ${reason} | Date: ${nowStr}`);
-      logJobEvent('skipped', symbol, { 
-        reason, 
-        price: ticker.lastPrice, 
+      console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | ${reason} | BuyThreshold: ${symbolConfig.buyThreshold} | SellThreshold: ${symbolConfig.sellThreshold} | Date: ${nowStr}`);
+      // Send to New Relic as a custom event (in English)
+      logJobEvent('no_condition_met', symbol, {
+        reason,
+        price: ticker.lastPrice,
         change24h: ticker.changePercent24h,
         buyThreshold: symbolConfig.buyThreshold,
         sellThreshold: symbolConfig.sellThreshold,
-        timestamp: nowStr 
+        status: 'executed',
+        startTime: request.startTime || nowStr,
+        timestamp: nowStr
       });
       return reply.send({ success: false, message: 'No buy/sell condition met.' });
     }
@@ -365,7 +368,7 @@ async function jobRunHandler(request, reply) {
         logJobMetric('buy_value_brl', symbol, amount);
       }
       
-      console.log(`[JOB] Executed | Symbol: ${symbol} | Action: BUY | Value: R$${amount} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Date: ${nowStr}`);
+      console.log(`[JOB] Executed | Symbol: ${symbol} | Action: BUY | Value: R$${amount} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Strategy: ${symbolConfig.sellStrategy} | BuyThreshold: ${symbolConfig.buyThreshold} | SellThreshold: ${symbolConfig.sellThreshold} | Date: ${nowStr}`);
       return reply.send({ success: op.status === 'success', message: 'Buy order executed', op });
     } else {
       // Get base currency balance
@@ -420,7 +423,7 @@ async function jobRunHandler(request, reply) {
           logJobMetric('sell_amount', symbol, firstSellAmount);
           logJobMetric('sell_value_brl', symbol, firstSellAmount * currentPrice);
           
-          console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL ${(strategyConfig.levels[0].percentage * 100).toFixed(0)}% | Amount: ${firstSellAmount} | Price: ${currentPrice} | Strategy: ${symbolConfig.sellStrategy} | 24h change: ${ticker.changePercent24h}% | Date: ${nowStr}`);
+          console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL ${(strategyConfig.levels[0].percentage * 100).toFixed(0)}% | Amount: ${firstSellAmount} | Price: ${currentPrice} | Strategy: ${symbolConfig.sellStrategy} | BuyThreshold: ${symbolConfig.buyThreshold} | SellThreshold: ${symbolConfig.sellThreshold} | 24h change: ${ticker.changePercent24h}% | Date: ${nowStr}`);
           
           // Log remaining targets if any
           const remainingTargets = tracker.sellLevels.filter(l => !l.executed);
@@ -506,7 +509,7 @@ async function jobRunHandler(request, reply) {
             logJobMetric('sell_amount', symbol, sellDecision.amount);
             logJobMetric('sell_value_brl', symbol, sellValueBRL);
             
-            console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL ${(sellDecision.level.percentage * 100).toFixed(0)}% | Amount: ${sellDecision.amount} | Price: ${currentPrice} | Strategy: ${symbolConfig.sellStrategy} | Reason: ${sellDecision.reason} | Date: ${nowStr}`);
+            console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL ${(sellDecision.level.percentage * 100).toFixed(0)}% | Amount: ${sellDecision.amount} | Price: ${currentPrice} | Strategy: ${symbolConfig.sellStrategy} | BuyThreshold: ${symbolConfig.buyThreshold} | SellThreshold: ${symbolConfig.sellThreshold} | Reason: ${sellDecision.reason} | Date: ${nowStr}`);
             
             // Check if strategy is complete
             if (tracker.isComplete()) {

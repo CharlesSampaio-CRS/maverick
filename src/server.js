@@ -20,25 +20,7 @@ const tickerRoutes = require('./routes/ticker');
 let cronJobs = {};
 
 const fastify = Fastify({ 
-  logger: {
-    level: 'info',
-    prettyPrint: false,
-    serializers: {
-      req: () => ({}),
-      res: () => ({})
-    },
-    stream: {
-      write: (message) => {
-        const log = JSON.parse(message);
-        // Filter "Server listening at" log
-        if (log.msg && log.msg.includes('Server listening at')) {
-          return; // Don't display this log
-        }
-        // Display all other logs
-        console.log(log.msg || message);
-      }
-    }
-  }, 
+  logger: false,
   disableRequestLogging: true,
   // Performance optimizations
   trustProxy: true,
@@ -93,7 +75,7 @@ function stopAllCronJobs() {
     if (cronJobs[symbol]) {
       cronJobs[symbol].stop();
       delete cronJobs[symbol];
-      fastify.log.info(`[CRON] Stopped job for symbol: ${symbol}`);
+      console.log(`[CRON] Stopped job for symbol: ${symbol}`);
     }
   }
 }
@@ -108,23 +90,19 @@ function createSymbolCronJob(symbolConfig) {
   if (cronJobs[symbol]) {
     cronJobs[symbol].stop();
     delete cronJobs[symbol];
-    fastify.log.info(`[CRON] Stopping previous job for symbol: ${symbol} | Strategy: ${sellStrategy || 'security'}`);
     console.log(`[CRON] Stopping previous job for symbol: ${symbol} | Strategy: ${sellStrategy || 'security'}`);
   }
 
   // Create new job for this symbol
   cronJobs[symbol] = cron.schedule(checkInterval, async () => {
-    fastify.log.info(`[CRON] Running job for symbol: ${symbol}`);
     console.log(`[CRON] Running job for symbol: ${symbol}`);
     await jobRunHandler(
       { body: { symbol } },
       {
         send: (msg) => {
-          fastify.log.info(`[CRON][${symbol}] ${msg?.message || msg}`);
           console.log(`[CRON][${symbol}] ${msg?.message || msg}`);
         },
         status: () => ({ send: (msg) => {
-          fastify.log.warn(`[CRON][${symbol}] ${msg?.message || msg}`);
           console.log(`[CRON][${symbol}] ${msg?.message || msg}`);
         } })
       }
@@ -134,8 +112,10 @@ function createSymbolCronJob(symbolConfig) {
     timezone: "America/Sao_Paulo"
   });
 
-  fastify.log.info(`[CRON] New job scheduled for symbol: ${symbol} with interval: ${checkInterval} | Strategy: ${sellStrategy || 'security'}`);
-  console.log(`[CRON] New job scheduled for symbol: ${symbol} with interval: ${checkInterval} | Strategy: ${sellStrategy || 'security'}`);
+  // Adiciona buyThreshold e sellThreshold ao log
+  const buyThreshold = symbolConfig.buyThreshold !== undefined ? symbolConfig.buyThreshold : 'N/A';
+  const sellThreshold = symbolConfig.sellThreshold !== undefined ? symbolConfig.sellThreshold : 'N/A';
+  console.log(`[CRON] New job scheduled for symbol: ${symbol} with interval: ${checkInterval} | Strategy: ${sellStrategy || 'security'} | BuyThreshold: ${buyThreshold} | SellThreshold: ${sellThreshold}`);
 }
 
 // Function to setup all cron jobs according to each symbol's interval
@@ -162,12 +142,19 @@ async function setupAllSymbolCronJobs() {
 // Function to update scheduling in real time
 async function updateCronSchedule() {
   try {
-    fastify.log.info('[CRON] Starting schedule update...');
+    console.log('[CRON] Starting schedule update...');
     await setupAllSymbolCronJobs();
-    fastify.log.info(`[CRON] Schedule updated successfully for all symbols`);
+    // Após atualizar, mostrar os símbolos que tiveram agendamento atualizado
+    const config = await jobService.status();
+    const updatedSymbols = (config.symbols || []).filter(s => s.enabled && s.checkInterval).map(s => `${s.symbol} (${s.checkInterval})`).join(', ');
+    if (updatedSymbols) {
+      console.log(`[CRON] Schedule updated successfully for: ${updatedSymbols}`);
+    } else {
+      console.log('[CRON] Schedule updated, but no symbols enabled.');
+    }
     return true;
   } catch (err) {
-    fastify.log.error(`[CRON][ERROR] Failed to update schedule: ${err.message}`);
+    console.error(`[CRON][ERROR] Failed to update schedule: ${err.message}`);
     return false;
   }
 }
@@ -183,7 +170,7 @@ const start = async () => {
     await setupAllSymbolCronJobs();
     await fastify.listen({ port: 3000, host: '0.0.0.0' });
   } catch (err) {
-    fastify.log.error(err);
+    console.error(err);
     process.exit(1);
   }
 };
