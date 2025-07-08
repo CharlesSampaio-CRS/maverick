@@ -1,28 +1,8 @@
 const { JobConfig, GlobalConfig } = require('../models/JobConfig');
+const cacheService = require('./cacheService');
 
 async function status() {
-  // Obter configuração global
-  let globalConfig = await GlobalConfig.findOne();
-  if (!globalConfig) {
-    globalConfig = new GlobalConfig({
-      enabled: false,
-      checkInterval: '*/3 * * * *',
-      minVolume24h: 1000000,
-      cooldownMinutes: 30
-    });
-    await globalConfig.save();
-  }
-
-  // Obter todas as configurações de símbolos
-  const symbolConfigs = await JobConfig.find();
-  
-  return {
-    enabled: globalConfig.enabled,
-    checkInterval: globalConfig.checkInterval,
-    minVolume24h: globalConfig.minVolume24h,
-    cooldownMinutes: globalConfig.cooldownMinutes,
-    symbols: symbolConfigs
-  };
+  return await cacheService.getJobConfig();
 }
 
 async function updateConfig(body) {
@@ -50,6 +30,8 @@ async function updateConfig(body) {
     }
     
     await symbolConfig.save();
+    // Invalidate cache after update
+    cacheService.invalidateJobConfig();
     return await status();
   }
 
@@ -66,6 +48,8 @@ async function updateConfig(body) {
   globalConfig.updatedAt = new Date();
 
   await globalConfig.save();
+  // Invalidate cache after update
+  cacheService.invalidateJobConfig();
   return await status();
 }
 
@@ -79,6 +63,19 @@ async function toggleSymbol(symbol) {
   symbolConfig.updatedAt = new Date();
   await symbolConfig.save();
   
+  // Invalidate cache after update
+  cacheService.invalidateJobConfig();
+  return await status();
+}
+
+async function removeSymbol(symbol) {
+  const result = await JobConfig.deleteOne({ symbol });
+  if (result.deletedCount === 0) {
+    throw new Error('Symbol not found');
+  }
+  
+  // Invalidate cache after update
+  cacheService.invalidateJobConfig();
   return await status();
 }
 
@@ -96,16 +93,9 @@ async function addSymbol(body) {
   });
   
   await symbolConfig.save();
-  return await status();
-}
-
-async function removeSymbol(symbol) {
-  const symbolConfig = await JobConfig.findOne({ symbol });
-  if (!symbolConfig) {
-    throw new Error('Symbol not found');
-  }
   
-  await JobConfig.deleteOne({ symbol });
+  // Invalidate cache after update
+  cacheService.invalidateJobConfig();
   return await status();
 }
 
@@ -121,11 +111,14 @@ async function updateSymbol(symbol, body) {
   symbolConfig.updatedAt = new Date();
   
   await symbolConfig.save();
+  
+  // Invalidate cache after update
+  cacheService.invalidateJobConfig();
   return await status();
 }
 
 async function getSymbol(symbol) {
-  const symbolConfig = await JobConfig.findOne({ symbol });
+  const symbolConfig = await JobConfig.findOne({ symbol }).lean();
   if (!symbolConfig) {
     throw new Error('Symbol not found');
   }
@@ -136,8 +129,8 @@ module.exports = {
   status,
   updateConfig,
   toggleSymbol,
-  addSymbol,
   removeSymbol,
+  addSymbol,
   updateSymbol,
   getSymbol
 }; 

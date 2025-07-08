@@ -2,6 +2,8 @@ require('dotenv').config();
 const Fastify = require('fastify');
 const fastifySwagger = require('@fastify/swagger');
 const fastifySwaggerUi = require('@fastify/swagger-ui');
+const fastifyCompress = require('@fastify/compress');
+const fastifyRateLimit = require('@fastify/rate-limit');
 const { connectMongo } = require('./db/mongo');
 const cron = require('node-cron');
 const jobService = require('./services/jobService');
@@ -36,7 +38,34 @@ const fastify = Fastify({
       }
     }
   }, 
-  disableRequestLogging: true 
+  disableRequestLogging: true,
+  // Performance optimizations
+  trustProxy: true,
+  connectionTimeout: 30000,
+  keepAliveTimeout: 30000,
+  maxRequestsPerSocket: 100
+});
+
+// Register compression plugin
+fastify.register(fastifyCompress, {
+  threshold: 1024, // Only compress responses larger than 1KB
+  level: 6 // Compression level (0-9)
+});
+
+// Register rate limiting
+fastify.register(fastifyRateLimit, {
+  max: 100, // Maximum 100 requests per window
+  timeWindow: '1 minute', // Time window
+  allowList: ['127.0.0.1', 'localhost'], // Allow local requests
+  errorResponseBuilder: function (request, context) {
+    return {
+      code: 429,
+      error: 'Too Many Requests',
+      message: `Rate limit exceeded, retry in ${context.after}`,
+      date: Date.now(),
+      expiresIn: context.ttl
+    }
+  }
 });
 
 // Swagger plugins

@@ -1,16 +1,31 @@
 const axios = require('axios');
+const cacheService = require('./cacheService');
 const BASE_URL = 'https://api.novadax.com';
 
+// HTTP client with timeout and retry configuration
+const httpClient = axios.create({
+  timeout: 5000, // 5 seconds timeout
+  maxRedirects: 3
+});
+
 async function getTicker(symbol) {
+  // Check cache first
+  const cached = cacheService.getTicker(symbol);
+  if (cached) {
+    return cached;
+  }
+
   const path = '/v1/market/ticker';
   const url = `${BASE_URL}${path}?symbol=${symbol}`;
   
   try {
-    const res = await axios.get(url);
+    const res = await httpClient.get(url);
     const d = res.data.data;
     
     if (!d) {
-      return { success: false, error: 'Ticker not found or unexpected response', details: res.data };
+      const errorResult = { success: false, error: 'Ticker not found or unexpected response', details: res.data };
+      cacheService.setTicker(symbol, errorResult);
+      return errorResult;
     }
     
     // Use API's changePercent24h if available, otherwise calculate manually
@@ -19,17 +34,13 @@ async function getTicker(symbol) {
       const currentPrice = parseFloat(d.lastPrice);
       const openPrice = parseFloat(d.open24h);
       changePercent = ((currentPrice - openPrice) / openPrice * 100).toFixed(2);
-      console.log(`[TICKER] Manual calculation for ${symbol}: ${changePercent}% (API: ${d.changePercent24h})`);
     }
     
     // Log data freshness
     const now = Date.now();
     const dataAge = now - d.timestamp;
-    if (dataAge > 30000) { // 30 seconds
-      console.warn(`[TICKER] Data may be stale for ${symbol}: ${Math.round(dataAge/1000)}s old`);
-    }
     
-    return {
+    const result = {
       success: true,
       symbol: d.symbol,
       lastPrice: d.lastPrice,
@@ -45,12 +56,53 @@ async function getTicker(symbol) {
       timestamp: d.timestamp,
       dataAge: Math.round(dataAge/1000) // Age in seconds
     };
+
+    // Cache the result
+    cacheService.setTicker(symbol, result);
+    
+    return result;
   } catch (err) {
     console.error(`[TICKER] Error fetching ${symbol}:`, err.message);
-    return { success: false, error: err.message };
+    const errorResult = { success: false, error: err.message };
+    cacheService.setTicker(symbol, errorResult);
+    return errorResult;
   }
 }
 
+// Batch ticker fetching for multiple symbols
+async function getTickers(symbols) {
+  const results = {};
+  const uncachedSymbols = [];
+  
+  // Check cache for each symbol
+  for (const symbol of symbols) {
+    const cached = cacheService.getTicker(symbol);
+    if (cached) {
+      results[symbol] = cached;
+    } else {
+      uncachedSymbols.push(symbol);
+    }
+  }
+  
+  // Fetch uncached symbols in parallel
+  if (uncachedSymbols.length > 0) {
+    const promises = uncachedSymbols.map(symbol => getTicker(symbol));
+    const fetchedResults = await Promise.allSettled(promises);
+    
+    uncachedSymbols.forEach((symbol, index) => {
+      const result = fetchedResults[index];
+      if (result.status === 'fulfilled') {
+        results[symbol] = result.value;
+      } else {
+        results[symbol] = { success: false, error: result.reason.message };
+      }
+    });
+  }
+  
+  return results;
+}
+
 module.exports = {
-  getTicker
+  getTicker,
+  getTickers
 }; 

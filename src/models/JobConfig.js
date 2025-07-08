@@ -10,6 +10,10 @@ const JobConfigSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+// Add indexes for better query performance (removed duplicate symbol index)
+JobConfigSchema.index({ enabled: 1 });
+JobConfigSchema.index({ symbol: 1, enabled: 1 });
+
 // Configurações globais do sistema
 const GlobalConfigSchema = new mongoose.Schema({
   enabled: { type: Boolean, default: false },

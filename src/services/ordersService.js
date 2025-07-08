@@ -1,10 +1,17 @@
 const axios = require('axios');
 const crypto = require('crypto');
 const Operation = require('../models/Operation');
+const cacheService = require('./cacheService');
 
 const API_KEY = process.env.NOVADAX_API_KEY;
 const API_SECRET = process.env.NOVADAX_API_SECRET;
 const BASE_URL = 'https://api.novadax.com';
+
+// HTTP client with timeout and retry configuration
+const httpClient = axios.create({
+  timeout: 15000, // 15 seconds timeout for order operations
+  maxRedirects: 3
+});
 
 // Verificar se as variáveis de ambiente estão definidas
 if (!API_KEY || !API_SECRET) {
@@ -37,13 +44,20 @@ function signRequest(method, path, query = '', body = null) {
   return headers;
 }
 
-async function createBuyOrder(symbol) {
+async function createBuyOrder(symbol, amount = null) {
   const balanceService = require('./balanceService');
   const balance = await balanceService.getBalance('BRL');
   const available = parseFloat(balance.available);
 
-  // Calcular valor seguro para ordem: múltiplo de 5, margem de R$ 0,20
-  let value = Math.floor((available - 0.20) / 5) * 5;
+  // Use provided amount or calculate safe value
+  let value;
+  if (amount) {
+    value = Math.min(amount, available - 0.20);
+  } else {
+    // Calcular valor seguro para ordem: múltiplo de 5, margem de R$ 0,20
+    value = Math.floor((available - 0.20) / 5) * 5;
+  }
+  
   if (value < 25) {
     throw new Error('Insufficient BRL balance (minimum R$25 required)');
   }
@@ -67,12 +81,17 @@ async function createBuyOrder(symbol) {
 
   try {
     const headers = signRequest('POST', path, null, body);
-    const res = await axios.post(url, body, { headers });
+    const res = await httpClient.post(url, body, { headers });
 
     op.status = res.data?.success || res.data?.code === 'A10000' ? 'success' : 'failed';
     op.price = res.data?.data?.price || null;
     op.response = res.data;
     await op.save();
+
+    // Invalidate balance cache after successful order
+    if (op.status === 'success') {
+      cacheService.invalidateBalance();
+    }
 
     return op;
   } catch (error) {
@@ -90,7 +109,6 @@ async function createSellOrder(symbol, amount) {
   }
 
   const amountStr = parseFloat(amount).toFixed(8); // 8 decimal places for crypto
-  console.log(`[ORDERS] Creating SELL order for ${symbol} amount: ${amountStr}`);
 
   const op = await Operation.create({
     symbol,
@@ -108,24 +126,9 @@ async function createSellOrder(symbol, amount) {
     amount: amountStr
   };
 
-  // Additional log to confirm configuration
-  console.log(`[ORDERS] Order configuration:`, {
-    symbol,
-    side: body.side,
-    type: body.type, // Should be 'MARKET'
-    amount: body.amount
-  });
-
   try {
     const headers = signRequest('POST', path, null, body);
-    const res = await axios.post(url, body, { headers });
-
-    console.log(`[ORDERS] API SELL Response:`, res.data);
-
-    // Additional check for order type in response
-    if (res.data?.data?.type && res.data.data.type !== 'MARKET') {
-      console.warn(`[ORDERS] Warning: Order type mismatch. Expected MARKET, got ${res.data.data.type}`);
-    }
+    const res = await httpClient.post(url, body, { headers });
 
     op.status = res.data?.success || res.data?.code === 'A10000' ? 'success' : 'failed';
     op.price = res.data?.data?.price || null;
@@ -133,25 +136,29 @@ async function createSellOrder(symbol, amount) {
 
     // --- PROFIT/LOSS CALCULATION ---
     if (op.status === 'success' && op.price) {
-      // Find the most recent buy operation for this symbol
+      // Find the most recent buy operation for this symbol using lean query
       const lastBuy = await Operation.findOne({
         symbol,
         type: 'buy',
         status: 'success'
-      }).sort({ createdAt: -1 });
+      }).sort({ createdAt: -1 }).lean();
       
       if (lastBuy && lastBuy.price) {
         op.buyPrice = lastBuy.price;
         op.profit = (op.price - lastBuy.price) * parseFloat(amount);
-        console.log(`[ORDERS] Profit calculation: Sell at ${op.price}, Buy at ${lastBuy.price}, Profit: ${op.profit}`);
       } else {
         op.profit = 0;
-        console.log(`[ORDERS] No buy operation found for profit calculation`);
       }
     }
     // --- END PROFIT/LOSS CALCULATION ---
 
     await op.save();
+
+    // Invalidate balance cache after successful order
+    if (op.status === 'success') {
+      cacheService.invalidateBalance();
+    }
+
     return op;
   } catch (error) {
     console.error(`[ORDERS] SELL Error:`, {

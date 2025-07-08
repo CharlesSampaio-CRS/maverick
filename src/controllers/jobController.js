@@ -147,8 +147,12 @@ async function jobRunHandler(request, reply) {
       return reply.status(400).send({ error: 'Symbol is required' });
     }
 
-    // 1. Get job configuration
-    const config = await jobService.status();
+    // 1. Get job configuration and ticker data in parallel
+    const [config, ticker] = await Promise.all([
+      jobService.status(),
+      tickerService.getTicker(symbol)
+    ]);
+    
     const symbolConfig = config.symbols.find(s => s.symbol === symbol);
     
     if (!symbolConfig || !symbolConfig.enabled) {
@@ -156,14 +160,12 @@ async function jobRunHandler(request, reply) {
       return reply.send({ success: false, message: 'Symbol is disabled' });
     }
 
-    // 2. Get ticker data
-    const ticker = await tickerService.getTicker(symbol);
     if (!ticker.success) {
       console.log(`[JOB] Not executed | Symbol: ${symbol} | Reason: error getting ticker | Date: ${nowStr}`);
       return reply.send({ success: false, message: 'Error getting ticker data' });
     }
 
-    // 3. Check cooldown
+    // 2. Check cooldown
     const lastExec = lastExecutions.get(symbol) || 0;
     const cooldown = (config.cooldownMinutes || 30) * 60 * 1000;
     
@@ -172,7 +174,7 @@ async function jobRunHandler(request, reply) {
       return reply.send({ success: false, message: 'Cooldown active, wait before operating again.' });
     }
 
-    // 4. Check thresholds and decide action
+    // 3. Check thresholds and decide action
     const change = parseFloat(ticker.changePercent24h);
     let action = null;
     
@@ -184,7 +186,7 @@ async function jobRunHandler(request, reply) {
       return reply.send({ success: false, message: 'No buy/sell condition met.' });
     }
 
-    // 5. Execute order
+    // 4. Execute order
     if (action === 'buy') {
       // Get BRL balance
       const balance = await balanceService.getBalance('BRL');
