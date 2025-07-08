@@ -240,8 +240,9 @@ async function jobToggleHandler(request, reply) {
 }
 
 async function jobRunHandler(request, reply) {
+  let symbol;
   try {
-    const { symbol } = request.body;
+    ({ symbol } = request.body);
     const nowStr = new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).replace('T', ' ');
     
     // Log job start
@@ -280,23 +281,7 @@ async function jobRunHandler(request, reply) {
     logJobMetric('price', symbol, parseFloat(ticker.lastPrice));
     logJobMetric('change24h', symbol, parseFloat(ticker.changePercent24h));
 
-    // 2. Check cooldown
-    const lastExec = lastExecutions.get(symbol) || 0;
-    const cooldown = (config.cooldownMinutes || 30) * 60 * 1000;
-    
-    if (Date.now() - lastExec < cooldown) {
-      const reason = 'cooldown active';
-      console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Reason: ${reason} | Date: ${nowStr}`);
-      logJobEvent('skipped', symbol, { 
-        reason, 
-        price: ticker.lastPrice, 
-        change24h: ticker.changePercent24h, 
-        timestamp: nowStr 
-      });
-      return reply.send({ success: false, message: 'Cooldown active, wait before operating again.' });
-    }
-
-    // 3. Check thresholds and decide action
+    // 2. Check thresholds and decide action
     const change = parseFloat(ticker.changePercent24h);
     let action = null;
     
@@ -750,14 +735,7 @@ async function jobStatusDetailedHandler(request, reply) {
     // Enriquecer informações dos símbolos
     const enrichedSymbols = config.symbols.map(symbol => {
       const lastExec = getLastExecutionTime(symbol.symbol);
-      const isInCooldown = lastExec ? 
-        (Date.now() - lastExec.getTime()) < ((config.cooldownMinutes || 30) * 60 * 1000) : 
-        false;
       
-      const cooldownEndTime = isInCooldown && lastExec ? 
-        new Date(lastExec.getTime() + ((config.cooldownMinutes || 30) * 60 * 1000)) : 
-        null;
-
       // Calcular próxima execução individual para cada símbolo
       const symbolNextExecution = getNextExecutionTime(symbol.checkInterval);
       const symbolTimeUntilNext = getTimeUntilNext(symbolNextExecution);
@@ -769,8 +747,6 @@ async function jobStatusDetailedHandler(request, reply) {
       return {
         ...symbol,
         lastExecution: lastExec ? lastExec.toISOString() : null,
-        isInCooldown,
-        cooldownEndTime: cooldownEndTime ? cooldownEndTime.toISOString() : null,
         cooldownMinutes: config.cooldownMinutes || 30,
         nextExecution: symbolNextExecution ? symbolNextExecution.toISOString() : null,
         timeUntilNext: symbolTimeUntilNext,
@@ -781,7 +757,7 @@ async function jobStatusDetailedHandler(request, reply) {
           description: strategyConfig.description
         },
         status: symbol.enabled ? 
-          (isInCooldown ? 'cooldown' : 'ready') : 
+          'ready' : 
           'disabled'
       };
     });

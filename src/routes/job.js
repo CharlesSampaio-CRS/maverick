@@ -15,7 +15,6 @@ const jobConfigSchema = {
     symbol: { type: 'string' },
     buyThreshold: { type: 'number' },
     sellThreshold: { type: 'number' },
-    enabled: { type: 'boolean' },
     checkInterval: { type: 'string' },
     sellStrategy: { 
       type: 'string', 
@@ -104,8 +103,6 @@ const profitSummarySchema = {
 const detailedStatusSchema = {
   type: 'object',
   properties: {
-    enabled: { type: 'boolean' },
-    cooldownMinutes: { type: 'number' },
     symbols: {
       type: 'array',
       items: {
@@ -114,7 +111,6 @@ const detailedStatusSchema = {
           symbol: { type: 'string' },
           buyThreshold: { type: 'number' },
           sellThreshold: { type: 'number' },
-          enabled: { type: 'boolean' },
           checkInterval: { type: 'string' },
           sellStrategy: { 
             type: 'string', 
@@ -125,13 +121,9 @@ const detailedStatusSchema = {
           updatedAt: { type: 'string', format: 'date-time' },
           __v: { type: 'number' },
           lastExecution: { type: 'string', format: 'date-time' },
-          isInCooldown: { type: 'boolean' },
-          cooldownEndTime: { type: 'string', format: 'date-time' },
-          cooldownMinutes: { type: 'number' },
           nextExecution: { type: 'string', format: 'date-time' },
-          timeUntilNext: { type: 'string' },
           readableInterval: { type: 'string' },
-          status: { type: 'string', enum: ['ready', 'cooldown', 'disabled'] }
+          status: { type: 'string', enum: ['ready', 'disabled'] }
         }
       }
     },
@@ -213,7 +205,6 @@ const jobRoutes = async (fastify, opts) => {
             symbol: { type: 'string' },
             buyThreshold: { type: 'number' },
             sellThreshold: { type: 'number' },
-            enabled: { type: 'boolean' },
             checkInterval: { type: 'string' },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' },

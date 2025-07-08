@@ -56,8 +56,7 @@ class CacheService {
       globalConfig = {
         enabled: false,
         checkInterval: '*/3 * * * *',
-        minVolume24h: 1000000,
-        cooldownMinutes: 30
+        minVolume24h: 1000000
       };
     }
 
@@ -65,10 +64,8 @@ class CacheService {
     const symbolConfigs = await JobConfig.find().lean();
     
     return {
-      enabled: globalConfig.enabled,
       checkInterval: globalConfig.checkInterval,
       minVolume24h: globalConfig.minVolume24h,
-      cooldownMinutes: globalConfig.cooldownMinutes,
       symbols: symbolConfigs
     };
   }

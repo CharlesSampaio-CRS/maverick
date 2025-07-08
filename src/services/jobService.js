@@ -43,10 +43,8 @@ async function updateConfig(body) {
     globalConfig = new GlobalConfig();
   }
 
-  globalConfig.enabled = body.enabled !== undefined ? body.enabled : globalConfig.enabled;
   globalConfig.checkInterval = body.checkInterval || globalConfig.checkInterval;
   globalConfig.minVolume24h = body.minVolume24h || globalConfig.minVolume24h;
-  globalConfig.cooldownMinutes = body.cooldownMinutes || globalConfig.cooldownMinutes;
   globalConfig.updatedAt = new Date();
 
   await globalConfig.save();

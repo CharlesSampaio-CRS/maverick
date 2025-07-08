@@ -21,10 +21,8 @@ JobConfigSchema.index({ symbol: 1, enabled: 1 });
 
 // Configurações globais do sistema
 const GlobalConfigSchema = new mongoose.Schema({
-  enabled: { type: Boolean, default: false },
   checkInterval: { type: String, default: '*/3 * * * *' },
   minVolume24h: { type: Number, default: 1000000 },
-  cooldownMinutes: { type: Number, default: 30 },
   updatedAt: { type: Date, default: Date.now }
 });
 
