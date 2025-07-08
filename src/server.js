@@ -13,8 +13,8 @@ const balanceRoutes = require('./routes/balance');
 const jobRoutes = require('./routes/job');
 const tickerRoutes = require('./routes/ticker');
 
-// Global variable to store cron job reference
-let cronJob = null;
+// Global variable to store cron job references by symbol
+let cronJobs = {};
 
 const fastify = Fastify({ 
   logger: {
@@ -57,101 +57,65 @@ fastify.register(balanceRoutes);
 fastify.register(jobRoutes);
 fastify.register(tickerRoutes);
 
-// Function to run all enabled jobs automatically
-async function runAllEnabledJobs() {
-  try {
-    const config = await jobService.status();
-    if (!config.enabled) return;
-    for (const symbolConfig of config.symbols) {
-      if (symbolConfig.enabled) {
-        fastify.log.info(`[CRON] Job: ${symbolConfig.symbol}`);
-        await jobRunHandler(
-          { body: { symbol: symbolConfig.symbol } },
-          {
-            send: (msg) => fastify.log.info(`[CRON][${symbolConfig.symbol}] ${msg?.message || msg}`),
-            status: () => ({ send: (msg) => fastify.log.warn(`[CRON][${symbolConfig.symbol}] ${msg?.message || msg}`) })
-          }
-        );
-      }
+// Function to stop all cron jobs
+function stopAllCronJobs() {
+  for (const symbol in cronJobs) {
+    if (cronJobs[symbol]) {
+      cronJobs[symbol].stop();
+      delete cronJobs[symbol];
+      fastify.log.info(`[CRON] Stopped job for symbol: ${symbol}`);
     }
-  } catch (err) {
-    fastify.log.error(`[CRON][ERROR]: ${err.message}`);
   }
 }
 
-// Function to stop current cron job
-function stopCronJob() {
-  if (cronJob) {
-    cronJob.stop();
-    cronJob = null;
-    fastify.log.info('[CRON] Scheduled job stopped');
-  }
-}
+// Function to create a cron job for a symbol
+function createSymbolCronJob(symbolConfig) {
+  const { symbol, checkInterval, enabled } = symbolConfig;
+  if (!enabled) return;
+  if (!checkInterval) return;
 
-// Function to create a new cron job
-function createCronJob(interval) {
-  // Stop previous job if exists
-  if (cronJob) {
-    fastify.log.info('[CRON] Stopping previous job...');
-    cronJob.stop();
-    cronJob = null;
+  // Stop previous job for this symbol if exists
+  if (cronJobs[symbol]) {
+    cronJobs[symbol].stop();
+    delete cronJobs[symbol];
+    fastify.log.info(`[CRON] Stopping previous job for symbol: ${symbol}`);
   }
-  
-  // Create new job
-  cronJob = cron.schedule(interval, runAllEnabledJobs, {
+
+  // Create new job for this symbol
+  cronJobs[symbol] = cron.schedule(checkInterval, async () => {
+    fastify.log.info(`[CRON] Running job for symbol: ${symbol}`);
+    await jobRunHandler(
+      { body: { symbol } },
+      {
+        send: (msg) => fastify.log.info(`[CRON][${symbol}] ${msg?.message || msg}`),
+        status: () => ({ send: (msg) => fastify.log.warn(`[CRON][${symbol}] ${msg?.message || msg}`) })
+      }
+    );
+  }, {
     scheduled: true,
     timezone: "America/Sao_Paulo"
   });
-  
-  fastify.log.info(`[CRON] New job scheduled with interval: ${interval}`);
-  return cronJob;
+
+  fastify.log.info(`[CRON] New job scheduled for symbol: ${symbol} with interval: ${checkInterval}`);
 }
 
-// Function to validate cron format
-function validateCronFormat(expression) {
-  // Check if cron.validate is available
-  if (typeof cron.validate === 'function') {
-    return cron.validate(expression);
-  }
-  
-  // Basic manual validation
-  const cronRegex = /^(\*|([0-9]|1[0-9]|2[0-9]|3[0-9]|4[0-9]|5[0-9])|\*\/([0-9]|1[0-9]|2[0-9]|3[0-9]|4[0-9]|5[0-9])) (\*|([0-9]|1[0-9]|2[0-3])|\*\/([0-9]|1[0-9]|2[0-3])) (\*|([1-9]|1[0-9]|2[0-9]|3[0-1])|\*\/([1-9]|1[0-9]|2[0-9]|3[0-1])) (\*|([1-9]|1[0-2])|\*\/([1-9]|1[0-2])) (\*|([0-6])|\*\/([0-6]))$/;
-  return cronRegex.test(expression);
-}
-
-// Dynamic scheduling according to checkInterval configuration
-async function setupCronJob() {
+// Function to setup all cron jobs according to each symbol's interval
+async function setupAllSymbolCronJobs() {
   try {
-    console.log('[CRON] Setting up cron job...');
+    console.log('[CRON] Setting up cron jobs for all symbols...');
+    stopAllCronJobs();
     const config = await jobService.status();
-    console.log('[CRON] Job config loaded:', { enabled: config.enabled, symbolsCount: config.symbols.length });
-    
-    const interval = config.checkInterval || '*/3 * * * *';
-    createCronJob(interval);
-
-    // Extract interval in minutes or hours
-    let intervalStr = interval;
-    if (/^\*\/(\d+) \* \* \* \*$/.test(interval)) {
-      const min = parseInt(interval.match(/^\*\/(\d+) \* \* \* \*$/)[1]);
-      intervalStr = `${min} min`;
-    } else if (/^0 \*\/(\d+) \* \* \*$/.test(interval)) {
-      const hr = parseInt(interval.match(/^0 \*\/(\d+) \* \* \*$/)[1]);
-      intervalStr = `${hr} h`;
-    }
-
-    console.log(`[CRON] Job interval: ${intervalStr}`);
-    
     if (config.symbols && config.symbols.length > 0) {
       for (const symbolConfig of config.symbols) {
-        if (symbolConfig.enabled) {
-          console.log(`[CRON] Symbol: ${symbolConfig.symbol} | Buy: ${symbolConfig.buyThreshold} | Sell: ${symbolConfig.sellThreshold} | Interval: ${intervalStr}`);
+        if (symbolConfig.enabled && symbolConfig.checkInterval) {
+          createSymbolCronJob(symbolConfig);
         }
       }
     } else {
       console.log('[CRON] No symbols configured');
     }
   } catch (err) {
-    console.error('[CRON] Error setting up cron job:', err.message);
+    console.error('[CRON] Error setting up symbol cron jobs:', err.message);
     throw err;
   }
 }
@@ -160,29 +124,8 @@ async function setupCronJob() {
 async function updateCronSchedule() {
   try {
     fastify.log.info('[CRON] Starting schedule update...');
-    
-    const config = await jobService.status();
-    const interval = config.checkInterval || '*/3 * * * *';
-    
-    // Validate cron format
-    if (!validateCronFormat(interval)) {
-      throw new Error(`Invalid interval format: ${interval}`);
-    }
-    
-    fastify.log.info(`[CRON] Applying new interval: ${interval}`);
-    createCronJob(interval);
-    
-    // Extract interval in minutes or hours for log
-    let intervalStr = interval;
-    if (/^\*\/(\d+) \* \* \* \*$/.test(interval)) {
-      const min = parseInt(interval.match(/^\*\/(\d+) \* \* \* \*$/)[1]);
-      intervalStr = `${min} min`;
-    } else if (/^0 \*\/(\d+) \* \* \*$/.test(interval)) {
-      const hr = parseInt(interval.match(/^0 \*\/(\d+) \* \* \*$/)[1]);
-      intervalStr = `${hr} h`;
-    }
-    
-    fastify.log.info(`[CRON] Schedule updated successfully to: ${intervalStr}`);
+    await setupAllSymbolCronJobs();
+    fastify.log.info(`[CRON] Schedule updated successfully for all symbols`);
     return true;
   } catch (err) {
     fastify.log.error(`[CRON][ERROR] Failed to update schedule: ${err.message}`);
@@ -197,10 +140,8 @@ fastify.decorate('updateCronSchedule', updateCronSchedule);
 const start = async () => {
   try {
     await connectMongo();
-    
-    // Setup cron job after MongoDB connection is established
-    await setupCronJob();
-    
+    // Setup cron jobs after MongoDB connection is established
+    await setupAllSymbolCronJobs();
     await fastify.listen({ port: 3000, host: '0.0.0.0' });
   } catch (err) {
     fastify.log.error(err);

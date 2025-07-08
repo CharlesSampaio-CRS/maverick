@@ -117,7 +117,12 @@ setInterval(cleanupOldStrategies, 60 * 60 * 1000);
 async function jobStatusHandler(request, reply) {
   try {
     const config = await jobService.status();
-    return reply.send(config.symbols);
+    // Return only symbol and status (enabled/disabled)
+    const simpleStatus = config.symbols.map(symbol => ({
+      symbol: symbol.symbol,
+      status: symbol.enabled
+    }));
+    return reply.send(simpleStatus);
   } catch (err) {
     return reply.status(500).send({ error: err.message });
   }
@@ -171,8 +176,8 @@ async function jobRunHandler(request, reply) {
     const change = parseFloat(ticker.changePercent24h);
     let action = null;
     
-    if (change <= config.buyThreshold) action = 'buy';
-    else if (change >= config.sellThreshold) action = 'sell';
+    if (change <= symbolConfig.buyThreshold) action = 'buy';
+    else if (change >= symbolConfig.sellThreshold) action = 'sell';
     
     if (!action) {
       console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | No buy/sell condition met | Date: ${nowStr}`);
@@ -333,13 +338,17 @@ async function jobRunHandler(request, reply) {
 
 async function jobConfigHandler(request, reply) {
   try {
+    console.log('[JOB CONFIG] Processing configuration update');
     const config = await jobService.updateConfig(request.body);
+    
     // Update cron schedule if available
     if (request.server.updateCronSchedule) {
       await request.server.updateCronSchedule();
     }
+    
     return reply.send(config);
   } catch (err) {
+    console.error(`[JOB CONFIG] Error: ${err.message}`);
     return reply.status(500).send({ error: err.message });
   }
 }
@@ -386,7 +395,102 @@ async function jobGetSymbolHandler(request, reply) {
 async function jobStatusDetailedHandler(request, reply) {
   try {
     const config = await jobService.status();
-    return reply.send(config);
+    
+    // Calcular próximo horário de execução baseado no cron
+    const getNextExecutionTime = (cronExpression) => {
+      try {
+        // Usar node-cron para calcular próxima execução
+        const parser = require('node-cron').parseExpression;
+        const cronParser = parser(cronExpression);
+        const nextDate = cronParser.next();
+        return nextDate.toDate();
+      } catch (err) {
+        return null;
+      }
+    };
+
+    // Calcular intervalo legível
+    const getReadableInterval = (cronExpression) => {
+      if (/^\*\/(\d+) \* \* \* \*$/.test(cronExpression)) {
+        const min = parseInt(cronExpression.match(/^\*\/(\d+) \* \* \* \*$/)[1]);
+        return `${min} minutos`;
+      } else if (/^0 \*\/(\d+) \* \* \*$/.test(cronExpression)) {
+        const hr = parseInt(cronExpression.match(/^0 \*\/(\d+) \* \* \*$/)[1]);
+        return `${hr} horas`;
+      } else if (/^0 0 \* \* \*$/.test(cronExpression)) {
+        return '24 horas';
+      } else if (/^0 \* \* \* \*$/.test(cronExpression)) {
+        return '1 hora';
+      }
+      return cronExpression;
+    };
+
+    // Calcular última execução (se disponível)
+    const getLastExecutionTime = (symbol) => {
+      const lastExec = lastExecutions.get(symbol);
+      return lastExec ? new Date(lastExec) : null;
+    };
+
+    // Calcular tempo até próxima execução
+    const getTimeUntilNext = (nextExecution) => {
+      if (!nextExecution) return null;
+      const now = new Date();
+      const diff = nextExecution.getTime() - now.getTime();
+      const minutes = Math.floor(diff / (1000 * 60));
+      const hours = Math.floor(minutes / 60);
+      const remainingMinutes = minutes % 60;
+      
+      if (hours > 0) {
+        return `${hours}h ${remainingMinutes}min`;
+      }
+      return `${minutes}min`;
+    };
+
+    // Enriquecer informações dos símbolos
+    const enrichedSymbols = config.symbols.map(symbol => {
+      const lastExec = getLastExecutionTime(symbol.symbol);
+      const isInCooldown = lastExec ? 
+        (Date.now() - lastExec.getTime()) < ((config.cooldownMinutes || 30) * 60 * 1000) : 
+        false;
+      
+      const cooldownEndTime = isInCooldown && lastExec ? 
+        new Date(lastExec.getTime() + ((config.cooldownMinutes || 30) * 60 * 1000)) : 
+        null;
+
+      // Calcular próxima execução individual para cada símbolo
+      const symbolNextExecution = getNextExecutionTime(symbol.checkInterval);
+      const symbolTimeUntilNext = getTimeUntilNext(symbolNextExecution);
+      const symbolReadableInterval = getReadableInterval(symbol.checkInterval);
+
+      return {
+        ...symbol.toObject(),
+        lastExecution: lastExec ? lastExec.toISOString() : null,
+        isInCooldown,
+        cooldownEndTime: cooldownEndTime ? cooldownEndTime.toISOString() : null,
+        cooldownMinutes: config.cooldownMinutes || 30,
+        nextExecution: symbolNextExecution ? symbolNextExecution.toISOString() : null,
+        timeUntilNext: symbolTimeUntilNext,
+        readableInterval: symbolReadableInterval,
+        status: symbol.enabled ? 
+          (isInCooldown ? 'cooldown' : 'ready') : 
+          'disabled'
+      };
+    });
+
+    const response = {
+      enabled: config.enabled,
+      cooldownMinutes: config.cooldownMinutes || 30,
+      symbols: enrichedSymbols,
+      summary: {
+        totalSymbols: config.symbols.length,
+        enabledSymbols: config.symbols.filter(s => s.enabled).length,
+        disabledSymbols: config.symbols.filter(s => !s.enabled).length,
+        readySymbols: enrichedSymbols.filter(s => s.status === 'ready').length,
+        cooldownSymbols: enrichedSymbols.filter(s => s.status === 'cooldown').length
+      }
+    };
+
+    return reply.send(response);
   } catch (err) {
     return reply.status(500).send({ error: err.message });
   }

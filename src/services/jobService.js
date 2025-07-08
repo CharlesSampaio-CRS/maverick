@@ -1,90 +1,135 @@
-const JobConfig = require('../models/JobConfig');
+const { JobConfig, GlobalConfig } = require('../models/JobConfig');
 
 async function status() {
-  let config = await JobConfig.findOne();
-  if (!config) {
-    config = new JobConfig({
+  // Obter configuração global
+  let globalConfig = await GlobalConfig.findOne();
+  if (!globalConfig) {
+    globalConfig = new GlobalConfig({
       enabled: false,
       checkInterval: '*/3 * * * *',
-      symbols: [],
       minVolume24h: 1000000,
       cooldownMinutes: 30
     });
-    await config.save();
+    await globalConfig.save();
   }
-  return config;
+
+  // Obter todas as configurações de símbolos
+  const symbolConfigs = await JobConfig.find();
+  
+  return {
+    enabled: globalConfig.enabled,
+    checkInterval: globalConfig.checkInterval,
+    minVolume24h: globalConfig.minVolume24h,
+    cooldownMinutes: globalConfig.cooldownMinutes,
+    symbols: symbolConfigs
+  };
 }
 
 async function updateConfig(body) {
-  if (body.enabled === undefined ||
-      !body.checkInterval ||
-      !body.symbols ||
-      !Array.isArray(body.symbols)) {
-    throw new Error('Required parameters: enabled (boolean), checkInterval (string), symbols (array)');
+  // Se o body tem symbol, é um símbolo individual
+  if (body.symbol) {
+    // Verificar se já existe configuração para este símbolo
+    let symbolConfig = await JobConfig.findOne({ symbol: body.symbol });
+    
+    if (symbolConfig) {
+      // Atualizar configuração existente
+      symbolConfig.buyThreshold = body.buyThreshold;
+      symbolConfig.sellThreshold = body.sellThreshold;
+      symbolConfig.enabled = body.enabled !== undefined ? body.enabled : symbolConfig.enabled;
+      symbolConfig.checkInterval = body.checkInterval || symbolConfig.checkInterval;
+      symbolConfig.updatedAt = new Date();
+    } else {
+      // Criar nova configuração
+      symbolConfig = new JobConfig({
+        symbol: body.symbol,
+        buyThreshold: body.buyThreshold,
+        sellThreshold: body.sellThreshold,
+        enabled: body.enabled !== undefined ? body.enabled : true,
+        checkInterval: body.checkInterval || '*/30 * * * *'
+      });
+    }
+    
+    await symbolConfig.save();
+    return await status();
   }
 
-  let config = await JobConfig.findOne();
-  if (!config) {
-    config = new JobConfig();
+  // Se não tem symbol, é uma atualização global
+  let globalConfig = await GlobalConfig.findOne();
+  if (!globalConfig) {
+    globalConfig = new GlobalConfig();
   }
 
-  config.enabled = body.enabled;
-  config.checkInterval = body.checkInterval;
-  config.symbols = body.symbols;
-  config.minVolume24h = body.minVolume24h || 1000000;
-  config.cooldownMinutes = body.cooldownMinutes || 30;
+  globalConfig.enabled = body.enabled !== undefined ? body.enabled : globalConfig.enabled;
+  globalConfig.checkInterval = body.checkInterval || globalConfig.checkInterval;
+  globalConfig.minVolume24h = body.minVolume24h || globalConfig.minVolume24h;
+  globalConfig.cooldownMinutes = body.cooldownMinutes || globalConfig.cooldownMinutes;
+  globalConfig.updatedAt = new Date();
 
-  await config.save();
-  return config;
+  await globalConfig.save();
+  return await status();
 }
 
 async function toggleSymbol(symbol) {
-  const config = await status();
-  const idx = config.symbols.findIndex(s => s.symbol === symbol);
-  if (idx === -1) throw new Error('Symbol not found');
+  const symbolConfig = await JobConfig.findOne({ symbol });
+  if (!symbolConfig) {
+    throw new Error('Symbol not found');
+  }
   
-  config.symbols[idx].enabled = !config.symbols[idx].enabled;
-  await config.save();
-  return config;
+  symbolConfig.enabled = !symbolConfig.enabled;
+  symbolConfig.updatedAt = new Date();
+  await symbolConfig.save();
+  
+  return await status();
 }
 
 async function addSymbol(body) {
   if (!body.symbol) throw new Error('Symbol is required');
   
-  const config = await status();
-  const exists = config.symbols.find(s => s.symbol === body.symbol);
+  const exists = await JobConfig.findOne({ symbol: body.symbol });
   if (exists) throw new Error('Symbol already exists');
   
-  config.symbols.push(body);
-  await config.save();
-  return config;
+  const symbolConfig = new JobConfig({
+    symbol: body.symbol,
+    buyThreshold: body.buyThreshold,
+    sellThreshold: body.sellThreshold,
+    enabled: body.enabled !== undefined ? body.enabled : true
+  });
+  
+  await symbolConfig.save();
+  return await status();
 }
 
 async function removeSymbol(symbol) {
-  const config = await status();
-  const idx = config.symbols.findIndex(s => s.symbol === symbol);
-  if (idx === -1) throw new Error('Symbol not found');
+  const symbolConfig = await JobConfig.findOne({ symbol });
+  if (!symbolConfig) {
+    throw new Error('Symbol not found');
+  }
   
-  config.symbols.splice(idx, 1);
-  await config.save();
-  return config;
+  await JobConfig.deleteOne({ symbol });
+  return await status();
 }
 
 async function updateSymbol(symbol, body) {
-  const config = await status();
-  const idx = config.symbols.findIndex(s => s.symbol === symbol);
-  if (idx === -1) throw new Error('Symbol not found');
+  const symbolConfig = await JobConfig.findOne({ symbol });
+  if (!symbolConfig) {
+    throw new Error('Symbol not found');
+  }
   
-  config.symbols[idx] = { ...config.symbols[idx], ...body };
-  await config.save();
-  return config;
+  symbolConfig.buyThreshold = body.buyThreshold !== undefined ? body.buyThreshold : symbolConfig.buyThreshold;
+  symbolConfig.sellThreshold = body.sellThreshold !== undefined ? body.sellThreshold : symbolConfig.sellThreshold;
+  symbolConfig.enabled = body.enabled !== undefined ? body.enabled : symbolConfig.enabled;
+  symbolConfig.updatedAt = new Date();
+  
+  await symbolConfig.save();
+  return await status();
 }
 
 async function getSymbol(symbol) {
-  const config = await status();
-  const found = config.symbols.find(s => s.symbol === symbol);
-  if (!found) throw new Error('Symbol not found');
-  return found;
+  const symbolConfig = await JobConfig.findOne({ symbol });
+  if (!symbolConfig) {
+    throw new Error('Symbol not found');
+  }
+  return symbolConfig;
 }
 
 module.exports = {

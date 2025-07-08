@@ -12,20 +12,14 @@ const {
 const jobConfigSchema = {
   type: 'object',
   properties: {
+    symbol: { type: 'string' },
+    buyThreshold: { type: 'number' },
+    sellThreshold: { type: 'number' },
     enabled: { type: 'boolean' },
     checkInterval: { type: 'string' },
-    symbols: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          symbol: { type: 'string' },
-          buyThreshold: { type: 'number' },
-          sellThreshold: { type: 'number' },
-          enabled: { type: 'boolean' }
-        }
-      }
-    }
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
+    __v: { type: 'number' }
   }
 };
 
@@ -102,6 +96,48 @@ const profitSummarySchema = {
   }
 };
 
+const detailedStatusSchema = {
+  type: 'object',
+  properties: {
+    enabled: { type: 'boolean' },
+    cooldownMinutes: { type: 'number' },
+    symbols: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          symbol: { type: 'string' },
+          buyThreshold: { type: 'number' },
+          sellThreshold: { type: 'number' },
+          enabled: { type: 'boolean' },
+          checkInterval: { type: 'string' },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+          __v: { type: 'number' },
+          lastExecution: { type: 'string', format: 'date-time' },
+          isInCooldown: { type: 'boolean' },
+          cooldownEndTime: { type: 'string', format: 'date-time' },
+          cooldownMinutes: { type: 'number' },
+          nextExecution: { type: 'string', format: 'date-time' },
+          timeUntilNext: { type: 'string' },
+          readableInterval: { type: 'string' },
+          status: { type: 'string', enum: ['ready', 'cooldown', 'disabled'] }
+        }
+      }
+    },
+    summary: {
+      type: 'object',
+      properties: {
+        totalSymbols: { type: 'number' },
+        enabledSymbols: { type: 'number' },
+        disabledSymbols: { type: 'number' },
+        readySymbols: { type: 'number' },
+        cooldownSymbols: { type: 'number' }
+      }
+    }
+  }
+};
+
 const jobRoutes = async (fastify, opts) => {
   fastify.get('/job/status', {
     schema: {
@@ -113,10 +149,9 @@ const jobRoutes = async (fastify, opts) => {
             type: 'object',
             properties: {
               symbol: { type: 'string' },
-              buyThreshold: { type: 'number' },
-              sellThreshold: { type: 'number' },
-              enabled: { type: 'boolean' }
-            }
+              status: { type: 'boolean' }
+            },
+            required: ['symbol', 'status']
           }
         }
       }
@@ -168,7 +203,11 @@ const jobRoutes = async (fastify, opts) => {
             symbol: { type: 'string' },
             buyThreshold: { type: 'number' },
             sellThreshold: { type: 'number' },
-            enabled: { type: 'boolean' }
+            enabled: { type: 'boolean' },
+            checkInterval: { type: 'string' },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' },
+            __v: { type: 'number' }
           }
         }
       }
@@ -176,7 +215,7 @@ const jobRoutes = async (fastify, opts) => {
   }, jobGetSymbolHandler);
 
   fastify.get('/job/status/detailed', {
-    schema: { summary: 'Get detailed job status', response: { 200: jobConfigSchema } }
+    schema: { summary: 'Get detailed job status', response: { 200: detailedStatusSchema } }
   }, jobStatusDetailedHandler);
 
   // Rotas para configuração da estratégia de venda
