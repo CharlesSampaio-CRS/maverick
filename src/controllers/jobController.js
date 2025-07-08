@@ -281,13 +281,23 @@ async function jobRunHandler(request, reply) {
     logJobMetric('price', symbol, parseFloat(ticker.lastPrice));
     logJobMetric('change24h', symbol, parseFloat(ticker.changePercent24h));
 
-    // 2. Check thresholds and decide action
+    // 2. Check thresholds e decidir ação
     const change = parseFloat(ticker.changePercent24h);
     let action = null;
-    
-    if (change <= symbolConfig.buyThreshold) action = 'buy';
-    else if (change >= symbolConfig.sellThreshold) action = 'sell';
-    
+
+    // Validação explícita dos thresholds
+    if (change <= symbolConfig.buyThreshold) {
+      if (change !== symbolConfig.buyThreshold && change > symbolConfig.buyThreshold) {
+        return reply.send({ success: false, message: `Buy not executed: changePercent24h (${change}) is not <= buyThreshold (${symbolConfig.buyThreshold})` });
+      }
+      action = 'buy';
+    } else if (change >= symbolConfig.sellThreshold) {
+      if (change !== symbolConfig.sellThreshold && change < symbolConfig.sellThreshold) {
+        return reply.send({ success: false, message: `Sell not executed: changePercent24h (${change}) is not >= sellThreshold (${symbolConfig.sellThreshold})` });
+      }
+      action = 'sell';
+    }
+
     if (!action) {
       const reason = 'no buy/sell condition met';
       console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | ${reason} | BuyThreshold: ${symbolConfig.buyThreshold} | SellThreshold: ${symbolConfig.sellThreshold} | Date: ${nowStr}`);
@@ -385,7 +395,12 @@ async function jobRunHandler(request, reply) {
       
       if (!tracker) {
         // Primeira venda: vender conforme a estratégia configurada
-        const firstSellAmount = amount * strategyConfig.levels[0].percentage;
+        const firstSellAmount = Math.floor(amount * strategyConfig.levels[0].percentage);
+        if (firstSellAmount <= 0) {
+          const reason = 'calculated sell amount is zero after flooring';
+          logJobEvent('sell_first_failed', symbol, { reason, amount, percentage: strategyConfig.levels[0].percentage });
+          return reply.send({ success: false, message: 'Sell amount is zero, cannot execute order.' });
+        }
         const op = await ordersService.createSellOrder(symbol, firstSellAmount);
         
         if (op.status === 'success') {
@@ -473,7 +488,13 @@ async function jobRunHandler(request, reply) {
               }
             });
           }
-          const op = await ordersService.createSellOrder(symbol, sellDecision.amount);
+          const sellAmount = Math.floor(sellDecision.amount);
+          if (sellAmount <= 0) {
+            const reason = 'calculated sell amount is zero after flooring';
+            logJobEvent('sell_strategy_failed', symbol, { reason, amount: sellDecision.amount });
+            return reply.send({ success: false, message: 'Sell amount is zero, cannot execute order.' });
+          }
+          const op = await ordersService.createSellOrder(symbol, sellAmount);
           
           if (op.status === 'success') {
             tracker.markLevelExecuted(sellDecision.level);
