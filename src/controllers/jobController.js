@@ -48,33 +48,64 @@ const lastExecutions = new Map();
 // In-memory storage for partial sales state with enhanced tracking
 const partialSales = new Map();
 
-// Dynamic sale strategy configuration
-const saleStrategyConfig = {
-  levels: [
-    { percentage: 0.3, priceIncrease: 0 },    // 30% on first sale
-    { percentage: 0.3, priceIncrease: 0.05 }, // 30% at +5%
-    { percentage: 0.2, priceIncrease: 0.10 }, // 20% at +10%
-    { percentage: 0.2, priceIncrease: 0.15 }  // 20% at +15%
-  ],
-  trailingStop: 0.05, // 5% below the highest price
-  minSellValueBRL: 50 // minimum R$50 per sale
+// Estratégias de venda parametrizadas por tipo
+const sellStrategies = {
+  security: {
+    name: 'Security',
+    description: 'Estratégia conservadora - vende 30% inicial e progressivo',
+    levels: [
+      { percentage: 0.3, priceIncrease: 0 },    // 30% no primeiro nível
+      { percentage: 0.3, priceIncrease: 0.05 }, // 30% em +5%
+      { percentage: 0.2, priceIncrease: 0.10 }, // 20% em +10%
+      { percentage: 0.2, priceIncrease: 0.15 }  // 20% em +15%
+    ],
+    trailingStop: 0.05, // 5% abaixo do preço mais alto
+    minSellValueBRL: 50 // mínimo R$50 por venda
+  },
+  basic: {
+    name: 'Basic',
+    description: 'Estratégia básica - vende 40% inicial e progressivo',
+    levels: [
+      { percentage: 0.4, priceIncrease: 0 },    // 40% no primeiro nível
+      { percentage: 0.3, priceIncrease: 0.05 }, // 30% em +5%
+      { percentage: 0.3, priceIncrease: 0.10 }  // 30% em +10%
+    ],
+    trailingStop: 0.05, // 5% abaixo do preço mais alto
+    minSellValueBRL: 50 // mínimo R$50 por venda
+  },
+  aggressive: {
+    name: 'Aggressive',
+    description: 'Estratégia agressiva - vende 100% imediatamente',
+    levels: [
+      { percentage: 1.0, priceIncrease: 0 }     // 100% imediatamente
+    ],
+    trailingStop: 0.02, // 2% abaixo do preço mais alto (mais agressivo)
+    minSellValueBRL: 50 // mínimo R$50 por venda
+  }
 };
+
+// Função para obter configuração de estratégia por símbolo
+function getStrategyConfig(symbolConfig) {
+  const strategyType = symbolConfig.sellStrategy || 'security';
+  return sellStrategies[strategyType] || sellStrategies.security;
+}
 
 // Enhanced partial sales tracking
 class PartialSaleTracker {
-  constructor(symbol, initialAmount, firstSellPrice) {
+  constructor(symbol, initialAmount, firstSellPrice, strategyConfig) {
     this.symbol = symbol;
     this.initialAmount = initialAmount;
     this.firstSellPrice = firstSellPrice;
     this.remainingAmount = initialAmount;
     this.highestPrice = firstSellPrice;
-    this.sellLevels = saleStrategyConfig.levels.map((level, idx) => ({
+    this.strategyConfig = strategyConfig;
+    this.sellLevels = strategyConfig.levels.map((level, idx) => ({
       percentage: level.percentage,
       price: firstSellPrice * (1 + level.priceIncrease),
       executed: idx === 0 // first sale already executed
     }));
     this.remainingAmount -= initialAmount * this.sellLevels[0].percentage;
-    this.trailingStop = firstSellPrice * (1 - saleStrategyConfig.trailingStop);
+    this.trailingStop = firstSellPrice * (1 - strategyConfig.trailingStop);
     this.lastUpdate = Date.now();
   }
 
@@ -358,42 +389,53 @@ async function jobRunHandler(request, reply) {
 
       const currentPrice = parseFloat(ticker.lastPrice);
       
+      // Obter configuração da estratégia para este símbolo
+      const strategyConfig = getStrategyConfig(symbolConfig);
+      
       // Enhanced partial sale logic with multiple exit levels
       let tracker = partialSales.get(symbol);
       
       if (!tracker) {
-        // First sale: sell 30% immediately, setup tracking for remaining 70%
-        const firstSellAmount = amount * 0.3;
+        // Primeira venda: vender conforme a estratégia configurada
+        const firstSellAmount = amount * strategyConfig.levels[0].percentage;
         const op = await ordersService.createSellOrder(symbol, firstSellAmount);
         
         if (op.status === 'success') {
-          tracker = new PartialSaleTracker(symbol, amount, currentPrice);
+          tracker = new PartialSaleTracker(symbol, amount, currentPrice, strategyConfig);
           partialSales.set(symbol, tracker);
           
           // Log first sell execution
           logJobEvent('sell_first_executed', symbol, { 
             amount: firstSellAmount, 
-            percentage: 30,
+            percentage: strategyConfig.levels[0].percentage * 100,
             price: currentPrice, 
             change24h: ticker.changePercent24h,
             orderStatus: op.status,
             orderId: op.id,
-            strategy: 'multi_level_activated',
+            strategy: symbolConfig.sellStrategy,
+            strategyName: strategyConfig.name,
             timestamp: nowStr 
           });
           
           logJobMetric('sell_amount', symbol, firstSellAmount);
           logJobMetric('sell_value_brl', symbol, firstSellAmount * currentPrice);
           
-          console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL 30% | Amount: ${firstSellAmount} | Price: ${currentPrice} | 24h change: ${ticker.changePercent24h}% | Date: ${nowStr}`);
-          console.log(`[JOB] Strategy | Next targets: +5% (${tracker.sellLevels[1].price}), +10% (${tracker.sellLevels[2].price}), +15% (${tracker.sellLevels[3].price}) | Trailing stop: ${tracker.trailingStop}`);
+          console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL ${(strategyConfig.levels[0].percentage * 100).toFixed(0)}% | Amount: ${firstSellAmount} | Price: ${currentPrice} | Strategy: ${symbolConfig.sellStrategy} | 24h change: ${ticker.changePercent24h}% | Date: ${nowStr}`);
+          
+          // Log remaining targets if any
+          const remainingTargets = tracker.sellLevels.filter(l => !l.executed);
+          if (remainingTargets.length > 0) {
+            console.log(`[JOB] Strategy | Next targets: ${remainingTargets.map(l => `+${((l.price/tracker.firstSellPrice-1)*100).toFixed(1)}%`).join(', ')} | Trailing stop: ${tracker.trailingStop}`);
+          }
           
           return reply.send({ 
             success: true, 
-            message: 'Sell order (30%) executed - Multi-level strategy activated', 
+            message: `Sell order (${(strategyConfig.levels[0].percentage * 100).toFixed(0)}%) executed - ${strategyConfig.name} strategy activated`, 
             op,
             strategy: {
-              nextTargets: tracker.sellLevels.filter(l => !l.executed).map(l => ({ percentage: l.percentage * 100, price: l.price })),
+              type: symbolConfig.sellStrategy,
+              name: strategyConfig.name,
+              nextTargets: remainingTargets.map(l => ({ percentage: l.percentage * 100, price: l.price })),
               trailingStop: tracker.trailingStop
             }
           });
@@ -403,9 +445,10 @@ async function jobRunHandler(request, reply) {
             price: currentPrice, 
             orderStatus: op.status,
             orderError: op.error,
+            strategy: symbolConfig.sellStrategy,
             timestamp: nowStr 
           });
-          return reply.send({ success: false, message: 'Sell order (30%) failed', op });
+          return reply.send({ success: false, message: `Sell order (${(strategyConfig.levels[0].percentage * 100).toFixed(0)}%) failed`, op });
         }
       } else {
         // Update tracker with current price
@@ -416,7 +459,7 @@ async function jobRunHandler(request, reply) {
         
         if (sellDecision.shouldSell) {
           // NovaDAX requires a minimum sale of R$50 (or configured value)
-          const minSellValueBRL = saleStrategyConfig.minSellValueBRL;
+          const minSellValueBRL = strategyConfig.minSellValueBRL;
           const sellValueBRL = sellDecision.amount * currentPrice;
           if (sellValueBRL < minSellValueBRL) {
             const reason = 'sale value below minimum';
@@ -427,12 +470,14 @@ async function jobRunHandler(request, reply) {
               minRequired: minSellValueBRL,
               amount: sellDecision.amount,
               price: currentPrice,
+              strategy: symbolConfig.sellStrategy,
               timestamp: nowStr 
             });
             return reply.send({
               success: false,
               message: `Sale not executed: sale value (R$${sellValueBRL.toFixed(2)}) is less than the minimum of R$${minSellValueBRL}`,
               strategy: {
+                type: symbolConfig.sellStrategy,
                 requiredMinValue: minSellValueBRL,
                 attemptedValue: sellValueBRL,
                 attemptedAmount: sellDecision.amount,
@@ -453,14 +498,15 @@ async function jobRunHandler(request, reply) {
               reason: sellDecision.reason,
               orderStatus: op.status,
               orderId: op.id,
-              strategy: 'multi_level',
+              strategy: symbolConfig.sellStrategy,
+              strategyName: strategyConfig.name,
               timestamp: nowStr 
             });
             
             logJobMetric('sell_amount', symbol, sellDecision.amount);
             logJobMetric('sell_value_brl', symbol, sellValueBRL);
             
-            console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL ${(sellDecision.level.percentage * 100).toFixed(0)}% | Amount: ${sellDecision.amount} | Price: ${currentPrice} | Reason: ${sellDecision.reason} | Date: ${nowStr}`);
+            console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL ${(sellDecision.level.percentage * 100).toFixed(0)}% | Amount: ${sellDecision.amount} | Price: ${currentPrice} | Strategy: ${symbolConfig.sellStrategy} | Reason: ${sellDecision.reason} | Date: ${nowStr}`);
             
             // Check if strategy is complete
             if (tracker.isComplete()) {
@@ -475,13 +521,15 @@ async function jobRunHandler(request, reply) {
                 profitPercent: metrics.profitPercent,
                 maxProfitPercent: metrics.maxProfitPercent,
                 highestPrice: metrics.highestPrice,
+                strategy: symbolConfig.sellStrategy,
+                strategyName: strategyConfig.name,
                 timestamp: nowStr 
               });
               
               logJobMetric('strategy_profit_percent', symbol, parseFloat(metrics.profitPercent));
               logJobMetric('strategy_max_profit_percent', symbol, parseFloat(metrics.maxProfitPercent));
               
-              console.log(`[JOB] Strategy Complete | Symbol: ${symbol} | All levels executed | Total profit strategy finished`);
+              console.log(`[JOB] Strategy Complete | Symbol: ${symbol} | Strategy: ${symbolConfig.sellStrategy} | All levels executed | Total profit strategy finished`);
               console.log(`[JOB] Performance | Avg Sell Price: ${metrics.avgSellPrice} | Profit: +${metrics.profitPercent}% | Max Profit: +${metrics.maxProfitPercent}% | Highest Price: ${metrics.highestPrice}`);
               
               return reply.send({ 
@@ -489,6 +537,8 @@ async function jobRunHandler(request, reply) {
                 message: `Sell order executed - Strategy complete: ${sellDecision.reason}`, 
                 op,
                 strategy: { 
+                  type: symbolConfig.sellStrategy,
+                  name: strategyConfig.name,
                   status: 'complete', 
                   totalExecuted: true,
                   performance: metrics
@@ -497,13 +547,15 @@ async function jobRunHandler(request, reply) {
             } else {
               // Log remaining targets
               const remainingTargets = tracker.sellLevels.filter(l => !l.executed);
-              console.log(`[JOB] Strategy Update | Remaining targets: ${remainingTargets.map(l => `+${((l.price/tracker.firstSellPrice-1)*100).toFixed(1)}%`).join(', ')} | Trailing stop: ${tracker.trailingStop}`);
+              console.log(`[JOB] Strategy Update | Symbol: ${symbol} | Strategy: ${symbolConfig.sellStrategy} | Remaining targets: ${remainingTargets.map(l => `+${((l.price/tracker.firstSellPrice-1)*100).toFixed(1)}%`).join(', ')} | Trailing stop: ${tracker.trailingStop}`);
               
               return reply.send({ 
                 success: true, 
                 message: `Sell order executed: ${sellDecision.reason}`, 
                 op,
                 strategy: {
+                  type: symbolConfig.sellStrategy,
+                  name: strategyConfig.name,
                   remainingTargets: remainingTargets.map(l => ({ percentage: l.percentage * 100, price: l.price })),
                   trailingStop: tracker.trailingStop,
                   highestPrice: tracker.highestPrice
@@ -517,6 +569,7 @@ async function jobRunHandler(request, reply) {
               reason: sellDecision.reason,
               orderStatus: op.status,
               orderError: op.error,
+              strategy: symbolConfig.sellStrategy,
               timestamp: nowStr 
             });
             return reply.send({ success: false, message: `Sell order failed: ${sellDecision.reason}`, op });
@@ -533,15 +586,18 @@ async function jobRunHandler(request, reply) {
             profitPotential: parseFloat(profitPotential),
             remainingTargets: remainingTargets.length,
             trailingStop: tracker.trailingStop,
+            strategy: symbolConfig.sellStrategy,
             timestamp: nowStr 
           });
           
-          console.log(`[JOB] Strategy Monitor | Symbol: ${symbol} | Current: ${currentPrice} | Highest: ${tracker.highestPrice} | Profit: +${profitPotential}% | Waiting for targets: ${remainingTargets.map(l => `+${((l.price/tracker.firstSellPrice-1)*100).toFixed(1)}%`).join(', ')} | Stop: ${tracker.trailingStop} | Date: ${nowStr}`);
+          console.log(`[JOB] Strategy Monitor | Symbol: ${symbol} | Strategy: ${symbolConfig.sellStrategy} | Current: ${currentPrice} | Highest: ${tracker.highestPrice} | Profit: +${profitPotential}% | Waiting for targets: ${remainingTargets.map(l => `+${((l.price/tracker.firstSellPrice-1)*100).toFixed(1)}%`).join(', ')} | Stop: ${tracker.trailingStop} | Date: ${nowStr}`);
           
           return reply.send({ 
             success: false, 
             message: 'Strategy active - waiting for price targets or trailing stop',
             strategy: {
+              type: symbolConfig.sellStrategy,
+              name: strategyConfig.name,
               currentPrice,
               highestPrice: tracker.highestPrice,
               profitPotential: `${profitPotential}%`,
@@ -704,6 +760,9 @@ async function jobStatusDetailedHandler(request, reply) {
       const symbolTimeUntilNext = getTimeUntilNext(symbolNextExecution);
       const symbolReadableInterval = getReadableInterval(symbol.checkInterval);
 
+      // Obter informações da estratégia
+      const strategyConfig = getStrategyConfig(symbol);
+
       return {
         ...symbol,
         lastExecution: lastExec ? lastExec.toISOString() : null,
@@ -713,6 +772,11 @@ async function jobStatusDetailedHandler(request, reply) {
         nextExecution: symbolNextExecution ? symbolNextExecution.toISOString() : null,
         timeUntilNext: symbolTimeUntilNext,
         readableInterval: symbolReadableInterval,
+        strategyInfo: {
+          type: symbol.sellStrategy || 'security',
+          name: strategyConfig.name,
+          description: strategyConfig.description
+        },
         status: symbol.enabled ? 
           (isInCooldown ? 'cooldown' : 'ready') : 
           'disabled'
@@ -766,8 +830,16 @@ async function jobStrategyStatusHandler(request, reply) {
     for (const [symbol, tracker] of partialSales.entries()) {
       const metrics = tracker.getProfitMetrics();
       const remainingTargets = tracker.sellLevels.filter(l => !l.executed);
+      
+      // Obter configuração da estratégia
+      const config = await jobService.status();
+      const symbolConfig = config.symbols.find(s => s.symbol === symbol);
+      const strategyConfig = getStrategyConfig(symbolConfig || { sellStrategy: 'security' });
+      
       strategies.push({
         symbol,
+        strategy: symbolConfig?.sellStrategy || 'security',
+        strategyName: strategyConfig.name,
         initialAmount: tracker.initialAmount,
         remainingAmount: tracker.remainingAmount,
         firstSellPrice: tracker.firstSellPrice,
@@ -800,13 +872,19 @@ async function jobStrategyStatusHandler(request, reply) {
 
 // Endpoint to get the sale strategy configuration
 async function getSaleStrategyConfigHandler(request, reply) {
-  return reply.send(saleStrategyConfig);
+  return reply.send(sellStrategies);
 }
 
 // Endpoint to update the sale strategy configuration
 async function updateSaleStrategyConfigHandler(request, reply) {
   try {
-    const { levels, trailingStop, minSellValueBRL } = request.body;
+    const { strategyType, levels, trailingStop, minSellValueBRL } = request.body;
+    const strategyConfig = sellStrategies[strategyType];
+
+    if (!strategyConfig) {
+      return reply.status(400).send({ error: `Strategy type "${strategyType}" not found.` });
+    }
+
     if (levels) {
       // Basic validation of levels
       if (!Array.isArray(levels) || levels.length === 0) {
@@ -822,21 +900,21 @@ async function updateSaleStrategyConfigHandler(request, reply) {
       if (Math.abs(total - 1) > 0.01) {
         return reply.status(400).send({ error: 'The sum of percentages must be 1 (100%)' });
       }
-      saleStrategyConfig.levels = levels;
+      strategyConfig.levels = levels;
     }
     if (typeof trailingStop === 'number') {
       if (trailingStop < 0.01 || trailingStop > 0.5) {
         return reply.status(400).send({ error: 'trailingStop must be between 0.01 and 0.5 (1% to 50%)' });
       }
-      saleStrategyConfig.trailingStop = trailingStop;
+      strategyConfig.trailingStop = trailingStop;
     }
     if (typeof minSellValueBRL === 'number') {
       if (minSellValueBRL < 10) {
         return reply.status(400).send({ error: 'minSellValueBRL must be at least 10' });
       }
-      saleStrategyConfig.minSellValueBRL = minSellValueBRL;
+      strategyConfig.minSellValueBRL = minSellValueBRL;
     }
-    return reply.send(saleStrategyConfig);
+    return reply.send(sellStrategies);
   } catch (err) {
     return reply.status(500).send({ error: err.message });
   }

@@ -100,7 +100,7 @@ function stopAllCronJobs() {
 
 // Function to create a cron job for a symbol
 function createSymbolCronJob(symbolConfig) {
-  const { symbol, checkInterval, enabled } = symbolConfig;
+  const { symbol, checkInterval, enabled, sellStrategy } = symbolConfig;
   if (!enabled) return;
   if (!checkInterval) return;
 
@@ -108,7 +108,7 @@ function createSymbolCronJob(symbolConfig) {
   if (cronJobs[symbol]) {
     cronJobs[symbol].stop();
     delete cronJobs[symbol];
-    fastify.log.info(`[CRON] Stopping previous job for symbol: ${symbol}`);
+    fastify.log.info(`[CRON] Stopping previous job for symbol: ${symbol} | Strategy: ${sellStrategy || 'security'}`);
   }
 
   // Create new job for this symbol
@@ -126,7 +126,7 @@ function createSymbolCronJob(symbolConfig) {
     timezone: "America/Sao_Paulo"
   });
 
-  fastify.log.info(`[CRON] New job scheduled for symbol: ${symbol} with interval: ${checkInterval}`);
+  fastify.log.info(`[CRON] New job scheduled for symbol: ${symbol} with interval: ${checkInterval} | Strategy: ${sellStrategy || 'security'}`);
 }
 
 // Function to setup all cron jobs according to each symbol's interval

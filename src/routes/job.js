@@ -17,6 +17,11 @@ const jobConfigSchema = {
     sellThreshold: { type: 'number' },
     enabled: { type: 'boolean' },
     checkInterval: { type: 'string' },
+    sellStrategy: { 
+      type: 'string', 
+      enum: ['security', 'basic', 'aggressive'],
+      default: 'security'
+    },
     createdAt: { type: 'string', format: 'date-time' },
     updatedAt: { type: 'string', format: 'date-time' },
     __v: { type: 'number' }
@@ -111,6 +116,11 @@ const detailedStatusSchema = {
           sellThreshold: { type: 'number' },
           enabled: { type: 'boolean' },
           checkInterval: { type: 'string' },
+          sellStrategy: { 
+            type: 'string', 
+            enum: ['security', 'basic', 'aggressive'],
+            default: 'security'
+          },
           createdAt: { type: 'string', format: 'date-time' },
           updatedAt: { type: 'string', format: 'date-time' },
           __v: { type: 'number' },

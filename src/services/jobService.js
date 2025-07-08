@@ -17,6 +17,7 @@ async function updateConfig(body) {
       symbolConfig.sellThreshold = body.sellThreshold;
       symbolConfig.enabled = body.enabled !== undefined ? body.enabled : symbolConfig.enabled;
       symbolConfig.checkInterval = body.checkInterval || symbolConfig.checkInterval;
+      symbolConfig.sellStrategy = body.sellStrategy || symbolConfig.sellStrategy;
       symbolConfig.updatedAt = new Date();
     } else {
       // Criar nova configuração
@@ -25,7 +26,8 @@ async function updateConfig(body) {
         buyThreshold: body.buyThreshold,
         sellThreshold: body.sellThreshold,
         enabled: body.enabled !== undefined ? body.enabled : true,
-        checkInterval: body.checkInterval || '*/30 * * * *'
+        checkInterval: body.checkInterval || '*/30 * * * *',
+        sellStrategy: body.sellStrategy || 'security'
       });
     }
     
@@ -89,7 +91,8 @@ async function addSymbol(body) {
     symbol: body.symbol,
     buyThreshold: body.buyThreshold,
     sellThreshold: body.sellThreshold,
-    enabled: body.enabled !== undefined ? body.enabled : true
+    enabled: body.enabled !== undefined ? body.enabled : true,
+    sellStrategy: body.sellStrategy || 'security'
   });
   
   await symbolConfig.save();
@@ -108,6 +111,7 @@ async function updateSymbol(symbol, body) {
   symbolConfig.buyThreshold = body.buyThreshold !== undefined ? body.buyThreshold : symbolConfig.buyThreshold;
   symbolConfig.sellThreshold = body.sellThreshold !== undefined ? body.sellThreshold : symbolConfig.sellThreshold;
   symbolConfig.enabled = body.enabled !== undefined ? body.enabled : symbolConfig.enabled;
+  symbolConfig.sellStrategy = body.sellStrategy || symbolConfig.sellStrategy;
   symbolConfig.updatedAt = new Date();
   
   await symbolConfig.save();

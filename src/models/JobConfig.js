@@ -6,6 +6,11 @@ const JobConfigSchema = new mongoose.Schema({
   sellThreshold: { type: Number, required: true },
   enabled: { type: Boolean, default: true },
   checkInterval: { type: String, default: '*/30 * * * *' }, // Novo campo para intervalo individual
+  sellStrategy: { 
+    type: String, 
+    enum: ['security', 'basic', 'aggressive'], 
+    default: 'security' 
+  }, // Estratégia de venda por símbolo
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
