@@ -465,7 +465,7 @@ async function jobStatusDetailedHandler(request, reply) {
       const symbolReadableInterval = getReadableInterval(symbol.checkInterval);
 
       return {
-        ...symbol.toObject(),
+        ...symbol,
         lastExecution: lastExec ? lastExec.toISOString() : null,
         isInCooldown,
         cooldownEndTime: cooldownEndTime ? cooldownEndTime.toISOString() : null,
