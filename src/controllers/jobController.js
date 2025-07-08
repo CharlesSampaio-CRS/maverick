@@ -1,9 +1,47 @@
+const newrelic = require('newrelic');
 const jobService = require('../services/jobService');
 const tickerService = require('../services/tickerService');
 const balanceService = require('../services/balanceService');
 const ordersService = require('../services/ordersService');
 const Operation = require('../models/Operation');
 const cron = require('node-cron');
+
+// New Relic logging helpers
+function logJobEvent(eventType, symbol, data = {}) {
+  try {
+    newrelic.recordCustomEvent('JobExecution', {
+      eventType,
+      symbol,
+      timestamp: new Date().toISOString(),
+      ...data
+    });
+  } catch (err) {
+    console.error('[NEWRELIC] Error logging job event:', err.message);
+  }
+}
+
+function logJobMetric(metricName, symbol, value) {
+  try {
+    newrelic.recordMetric(`Custom/Job/${metricName}/${symbol}`, value);
+  } catch (err) {
+    console.error('[NEWRELIC] Error logging job metric:', err.message);
+  }
+}
+
+function logJobError(symbol, error, context = {}) {
+  try {
+    newrelic.recordCustomEvent('JobError', {
+      symbol,
+      error: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString(),
+      ...context
+    });
+    newrelic.noticeError(error);
+  } catch (err) {
+    console.error('[NEWRELIC] Error logging job error:', err.message);
+  }
+}
 
 // In-memory storage for last execution times
 const lastExecutions = new Map();
@@ -102,12 +140,33 @@ class PartialSaleTracker {
 function cleanupOldStrategies() {
   const now = Date.now();
   const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+  let cleanedCount = 0;
   
   for (const [symbol, tracker] of partialSales.entries()) {
     if (now - tracker.lastUpdate > maxAge) {
       console.log(`[JOB] Cleanup | Removing old strategy for ${symbol} | Age: ${((now - tracker.lastUpdate) / (60 * 60 * 1000)).toFixed(1)}h`);
+      
+      // Log cleanup event
+      logJobEvent('strategy_cleanup', symbol, {
+        age: ((now - tracker.lastUpdate) / (60 * 60 * 1000)).toFixed(1),
+        initialAmount: tracker.initialAmount,
+        remainingAmount: tracker.remainingAmount,
+        highestPrice: tracker.highestPrice,
+        profitMetrics: tracker.getProfitMetrics()
+      });
+      
       partialSales.delete(symbol);
+      cleanedCount++;
     }
+  }
+  
+  // Log cleanup summary
+  if (cleanedCount > 0) {
+    logJobEvent('cleanup_summary', 'system', {
+      cleanedCount,
+      remainingStrategies: partialSales.size,
+      timestamp: new Date().toISOString()
+    });
   }
 }
 
@@ -132,8 +191,19 @@ async function jobToggleHandler(request, reply) {
   try {
     const { symbol } = request.params;
     const config = await jobService.toggleSymbol(symbol);
+    
+    // Log symbol toggle
+    const symbolConfig = config.symbols.find(s => s.symbol === symbol);
+    logJobEvent('symbol_toggle', symbol, {
+      enabled: symbolConfig.enabled,
+      buyThreshold: symbolConfig.buyThreshold,
+      sellThreshold: symbolConfig.sellThreshold,
+      checkInterval: symbolConfig.checkInterval
+    });
+    
     return reply.send(config);
   } catch (err) {
+    logJobError(request.params.symbol, err, { context: 'jobToggleHandler' });
     return reply.status(500).send({ error: err.message });
   }
 }
@@ -142,9 +212,15 @@ async function jobRunHandler(request, reply) {
   try {
     const { symbol } = request.body;
     const nowStr = new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).replace('T', ' ');
+    
+    // Log job start
+    logJobEvent('started', symbol, { timestamp: nowStr });
+    
     if (!symbol) {
+      const error = 'Symbol not provided';
       console.log(`[JOB] Failure | Symbol not provided | Date: ${nowStr}`);
-      return reply.status(400).send({ error: 'Symbol is required' });
+      logJobEvent('failed', symbol, { reason: error, timestamp: nowStr });
+      return reply.status(400).send({ error });
     }
 
     // 1. Get job configuration and ticker data in parallel
@@ -156,21 +232,36 @@ async function jobRunHandler(request, reply) {
     const symbolConfig = config.symbols.find(s => s.symbol === symbol);
     
     if (!symbolConfig || !symbolConfig.enabled) {
-      console.log(`[JOB] Not executed | Symbol: ${symbol} | Reason: symbol disabled | Date: ${nowStr}`);
+      const reason = 'symbol disabled';
+      console.log(`[JOB] Not executed | Symbol: ${symbol} | Reason: ${reason} | Date: ${nowStr}`);
+      logJobEvent('skipped', symbol, { reason, timestamp: nowStr });
       return reply.send({ success: false, message: 'Symbol is disabled' });
     }
 
     if (!ticker.success) {
-      console.log(`[JOB] Not executed | Symbol: ${symbol} | Reason: error getting ticker | Date: ${nowStr}`);
+      const reason = 'error getting ticker';
+      console.log(`[JOB] Not executed | Symbol: ${symbol} | Reason: ${reason} | Date: ${nowStr}`);
+      logJobEvent('failed', symbol, { reason, tickerError: ticker.error, timestamp: nowStr });
       return reply.send({ success: false, message: 'Error getting ticker data' });
     }
+
+    // Log ticker data
+    logJobMetric('price', symbol, parseFloat(ticker.lastPrice));
+    logJobMetric('change24h', symbol, parseFloat(ticker.changePercent24h));
 
     // 2. Check cooldown
     const lastExec = lastExecutions.get(symbol) || 0;
     const cooldown = (config.cooldownMinutes || 30) * 60 * 1000;
     
     if (Date.now() - lastExec < cooldown) {
-      console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Reason: cooldown active | Date: ${nowStr}`);
+      const reason = 'cooldown active';
+      console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Reason: ${reason} | Date: ${nowStr}`);
+      logJobEvent('skipped', symbol, { 
+        reason, 
+        price: ticker.lastPrice, 
+        change24h: ticker.changePercent24h, 
+        timestamp: nowStr 
+      });
       return reply.send({ success: false, message: 'Cooldown active, wait before operating again.' });
     }
 
@@ -182,9 +273,28 @@ async function jobRunHandler(request, reply) {
     else if (change >= symbolConfig.sellThreshold) action = 'sell';
     
     if (!action) {
-      console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | No buy/sell condition met | Date: ${nowStr}`);
+      const reason = 'no buy/sell condition met';
+      console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | ${reason} | Date: ${nowStr}`);
+      logJobEvent('skipped', symbol, { 
+        reason, 
+        price: ticker.lastPrice, 
+        change24h: ticker.changePercent24h,
+        buyThreshold: symbolConfig.buyThreshold,
+        sellThreshold: symbolConfig.sellThreshold,
+        timestamp: nowStr 
+      });
       return reply.send({ success: false, message: 'No buy/sell condition met.' });
     }
+
+    // Log action decision
+    logJobEvent('action_decision', symbol, { 
+      action, 
+      price: ticker.lastPrice, 
+      change24h: ticker.changePercent24h,
+      buyThreshold: symbolConfig.buyThreshold,
+      sellThreshold: symbolConfig.sellThreshold,
+      timestamp: nowStr 
+    });
 
     // 4. Execute order
     if (action === 'buy') {
@@ -194,11 +304,36 @@ async function jobRunHandler(request, reply) {
       let amount = Math.max(Math.floor(max), 10); // minimum R$10
       
       if (amount < 10) {
-        console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Reason: insufficient BRL balance | Date: ${nowStr}`);
+        const reason = 'insufficient BRL balance';
+        console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Reason: ${reason} | Date: ${nowStr}`);
+        logJobEvent('failed', symbol, { 
+          reason, 
+          availableBalance: max,
+          requiredMin: 10,
+          price: ticker.lastPrice, 
+          change24h: ticker.changePercent24h,
+          timestamp: nowStr 
+        });
         return reply.send({ success: false, message: 'Insufficient BRL balance to buy.' });
       }
       
       const op = await ordersService.createBuyOrder(symbol, amount);
+      
+      // Log buy execution
+      logJobEvent('buy_executed', symbol, { 
+        amount, 
+        price: ticker.lastPrice, 
+        change24h: ticker.changePercent24h,
+        orderStatus: op.status,
+        orderId: op.id,
+        timestamp: nowStr 
+      });
+      
+      if (op.status === 'success') {
+        logJobMetric('buy_amount', symbol, amount);
+        logJobMetric('buy_value_brl', symbol, amount);
+      }
+      
       console.log(`[JOB] Executed | Symbol: ${symbol} | Action: BUY | Value: R$${amount} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Date: ${nowStr}`);
       return reply.send({ success: op.status === 'success', message: 'Buy order executed', op });
     } else {
@@ -208,7 +343,16 @@ async function jobRunHandler(request, reply) {
       const amount = parseFloat(balance.available);
       
       if (amount <= 0) {
-        console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Reason: insufficient balance to sell | Date: ${nowStr}`);
+        const reason = 'insufficient balance to sell';
+        console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Reason: ${reason} | Date: ${nowStr}`);
+        logJobEvent('failed', symbol, { 
+          reason, 
+          availableBalance: amount,
+          baseCurrency,
+          price: ticker.lastPrice, 
+          change24h: ticker.changePercent24h,
+          timestamp: nowStr 
+        });
         return reply.send({ success: false, message: 'Insufficient balance to sell.' });
       }
 
@@ -226,6 +370,21 @@ async function jobRunHandler(request, reply) {
           tracker = new PartialSaleTracker(symbol, amount, currentPrice);
           partialSales.set(symbol, tracker);
           
+          // Log first sell execution
+          logJobEvent('sell_first_executed', symbol, { 
+            amount: firstSellAmount, 
+            percentage: 30,
+            price: currentPrice, 
+            change24h: ticker.changePercent24h,
+            orderStatus: op.status,
+            orderId: op.id,
+            strategy: 'multi_level_activated',
+            timestamp: nowStr 
+          });
+          
+          logJobMetric('sell_amount', symbol, firstSellAmount);
+          logJobMetric('sell_value_brl', symbol, firstSellAmount * currentPrice);
+          
           console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL 30% | Amount: ${firstSellAmount} | Price: ${currentPrice} | 24h change: ${ticker.changePercent24h}% | Date: ${nowStr}`);
           console.log(`[JOB] Strategy | Next targets: +5% (${tracker.sellLevels[1].price}), +10% (${tracker.sellLevels[2].price}), +15% (${tracker.sellLevels[3].price}) | Trailing stop: ${tracker.trailingStop}`);
           
@@ -239,6 +398,13 @@ async function jobRunHandler(request, reply) {
             }
           });
         } else {
+          logJobEvent('sell_first_failed', symbol, { 
+            amount: firstSellAmount, 
+            price: currentPrice, 
+            orderStatus: op.status,
+            orderError: op.error,
+            timestamp: nowStr 
+          });
           return reply.send({ success: false, message: 'Sell order (30%) failed', op });
         }
       } else {
@@ -253,7 +419,16 @@ async function jobRunHandler(request, reply) {
           const minSellValueBRL = saleStrategyConfig.minSellValueBRL;
           const sellValueBRL = sellDecision.amount * currentPrice;
           if (sellValueBRL < minSellValueBRL) {
+            const reason = 'sale value below minimum';
             console.log(`[JOB] Sale NOT executed | Symbol: ${symbol} | Reason: sale value (R$${sellValueBRL.toFixed(2)}) is less than the minimum of R$${minSellValueBRL}`);
+            logJobEvent('sell_skipped', symbol, { 
+              reason, 
+              attemptedValue: sellValueBRL,
+              minRequired: minSellValueBRL,
+              amount: sellDecision.amount,
+              price: currentPrice,
+              timestamp: nowStr 
+            });
             return reply.send({
               success: false,
               message: `Sale not executed: sale value (R$${sellValueBRL.toFixed(2)}) is less than the minimum of R$${minSellValueBRL}`,
@@ -270,6 +445,21 @@ async function jobRunHandler(request, reply) {
           if (op.status === 'success') {
             tracker.markLevelExecuted(sellDecision.level);
             
+            // Log strategy sell execution
+            logJobEvent('sell_strategy_executed', symbol, { 
+              amount: sellDecision.amount, 
+              percentage: sellDecision.level.percentage * 100,
+              price: currentPrice, 
+              reason: sellDecision.reason,
+              orderStatus: op.status,
+              orderId: op.id,
+              strategy: 'multi_level',
+              timestamp: nowStr 
+            });
+            
+            logJobMetric('sell_amount', symbol, sellDecision.amount);
+            logJobMetric('sell_value_brl', symbol, sellValueBRL);
+            
             console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL ${(sellDecision.level.percentage * 100).toFixed(0)}% | Amount: ${sellDecision.amount} | Price: ${currentPrice} | Reason: ${sellDecision.reason} | Date: ${nowStr}`);
             
             // Check if strategy is complete
@@ -278,6 +468,19 @@ async function jobRunHandler(request, reply) {
               
               // Calculate final profit metrics
               const metrics = tracker.getProfitMetrics();
+              
+              // Log strategy completion
+              logJobEvent('strategy_complete', symbol, { 
+                avgSellPrice: metrics.avgSellPrice,
+                profitPercent: metrics.profitPercent,
+                maxProfitPercent: metrics.maxProfitPercent,
+                highestPrice: metrics.highestPrice,
+                timestamp: nowStr 
+              });
+              
+              logJobMetric('strategy_profit_percent', symbol, parseFloat(metrics.profitPercent));
+              logJobMetric('strategy_max_profit_percent', symbol, parseFloat(metrics.maxProfitPercent));
+              
               console.log(`[JOB] Strategy Complete | Symbol: ${symbol} | All levels executed | Total profit strategy finished`);
               console.log(`[JOB] Performance | Avg Sell Price: ${metrics.avgSellPrice} | Profit: +${metrics.profitPercent}% | Max Profit: +${metrics.maxProfitPercent}% | Highest Price: ${metrics.highestPrice}`);
               
@@ -308,12 +511,30 @@ async function jobRunHandler(request, reply) {
               });
             }
           } else {
+            logJobEvent('sell_strategy_failed', symbol, { 
+              amount: sellDecision.amount, 
+              price: currentPrice, 
+              reason: sellDecision.reason,
+              orderStatus: op.status,
+              orderError: op.error,
+              timestamp: nowStr 
+            });
             return reply.send({ success: false, message: `Sell order failed: ${sellDecision.reason}`, op });
           }
         } else {
           // No sell condition met - log current status
           const remainingTargets = tracker.sellLevels.filter(l => !l.executed);
           const profitPotential = ((tracker.highestPrice / tracker.firstSellPrice - 1) * 100).toFixed(2);
+          
+          // Log strategy monitoring
+          logJobEvent('strategy_monitoring', symbol, { 
+            currentPrice,
+            highestPrice: tracker.highestPrice,
+            profitPotential: parseFloat(profitPotential),
+            remainingTargets: remainingTargets.length,
+            trailingStop: tracker.trailingStop,
+            timestamp: nowStr 
+          });
           
           console.log(`[JOB] Strategy Monitor | Symbol: ${symbol} | Current: ${currentPrice} | Highest: ${tracker.highestPrice} | Profit: +${profitPotential}% | Waiting for targets: ${remainingTargets.map(l => `+${((l.price/tracker.firstSellPrice-1)*100).toFixed(1)}%`).join(', ')} | Stop: ${tracker.trailingStop} | Date: ${nowStr}`);
           
@@ -334,6 +555,7 @@ async function jobRunHandler(request, reply) {
 
   } catch (err) {
     console.error(`[JOB] Error: ${err.message}`);
+    logJobError(symbol, err, { timestamp: new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).replace('T', ' ') });
     return reply.status(500).send({ error: err.message });
   }
 }
@@ -348,9 +570,19 @@ async function jobConfigHandler(request, reply) {
       await request.server.updateCronSchedule();
     }
     
+    // Log configuration update
+    logJobEvent('config_update', 'system', {
+      enabled: config.enabled,
+      cooldownMinutes: config.cooldownMinutes || 30,
+      totalSymbols: config.symbols.length,
+      enabledSymbols: config.symbols.filter(s => s.enabled).length,
+      disabledSymbols: config.symbols.filter(s => !s.enabled).length
+    });
+
     return reply.send(config);
   } catch (err) {
     console.error(`[JOB CONFIG] Error: ${err.message}`);
+    logJobError('system', err, { context: 'jobConfigHandler' });
     return reply.status(500).send({ error: err.message });
   }
 }
@@ -397,6 +629,14 @@ async function jobGetSymbolHandler(request, reply) {
 async function jobStatusDetailedHandler(request, reply) {
   try {
     const config = await jobService.status();
+    
+    // Log configuration status
+    logJobEvent('config_status', 'system', {
+      totalSymbols: config.symbols.length,
+      enabledSymbols: config.symbols.filter(s => s.enabled).length,
+      disabledSymbols: config.symbols.filter(s => !s.enabled).length,
+      cooldownMinutes: config.cooldownMinutes || 30
+    });
     
     // Calcular próximo horário de execução baseado no cron
     const getNextExecutionTime = (cronExpression) => {
@@ -494,6 +734,7 @@ async function jobStatusDetailedHandler(request, reply) {
 
     return reply.send(response);
   } catch (err) {
+    logJobError('system', err, { context: 'jobStatusDetailedHandler' });
     return reply.status(500).send({ error: err.message });
   }
 }
@@ -552,6 +793,7 @@ async function jobStrategyStatusHandler(request, reply) {
       }
     });
   } catch (err) {
+    logJobError('system', err, { context: 'jobStrategyStatusHandler' });
     return reply.status(500).send({ error: err.message });
   }
 }
@@ -620,6 +862,18 @@ async function getProfitSummaryHandler(request, reply) {
       bySymbol[op.symbol] += op.profit || 0;
     }
     
+    // Log profit summary
+    logJobEvent('profit_summary', 'system', {
+      totalProfit: totalProfit.toFixed(2),
+      operationsCount: sells.length,
+      symbolsCount: Object.keys(bySymbol).length,
+      avgProfitPerOperation: sells.length > 0 ? (totalProfit / sells.length).toFixed(2) : 0
+    });
+    
+    // Log metrics
+    logJobMetric('total_profit', 'system', totalProfit);
+    logJobMetric('operations_count', 'system', sells.length);
+    
     return reply.send({
       totalProfit: totalProfit.toFixed(2),
       bySymbol: Object.fromEntries(
@@ -630,6 +884,7 @@ async function getProfitSummaryHandler(request, reply) {
       operationsCount: sells.length
     });
   } catch (err) {
+    logJobError('system', err, { context: 'getProfitSummaryHandler' });
     return reply.status(500).send({ error: err.message });
   }
 }

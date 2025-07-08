@@ -1,3 +1,4 @@
+require('newrelic');
 require('dotenv').config();
 const Fastify = require('fastify');
 const fastifySwagger = require('@fastify/swagger');
