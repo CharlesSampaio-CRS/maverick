@@ -109,16 +109,24 @@ function createSymbolCronJob(symbolConfig) {
     cronJobs[symbol].stop();
     delete cronJobs[symbol];
     fastify.log.info(`[CRON] Stopping previous job for symbol: ${symbol} | Strategy: ${sellStrategy || 'security'}`);
+    console.log(`[CRON] Stopping previous job for symbol: ${symbol} | Strategy: ${sellStrategy || 'security'}`);
   }
 
   // Create new job for this symbol
   cronJobs[symbol] = cron.schedule(checkInterval, async () => {
     fastify.log.info(`[CRON] Running job for symbol: ${symbol}`);
+    console.log(`[CRON] Running job for symbol: ${symbol}`);
     await jobRunHandler(
       { body: { symbol } },
       {
-        send: (msg) => fastify.log.info(`[CRON][${symbol}] ${msg?.message || msg}`),
-        status: () => ({ send: (msg) => fastify.log.warn(`[CRON][${symbol}] ${msg?.message || msg}`) })
+        send: (msg) => {
+          fastify.log.info(`[CRON][${symbol}] ${msg?.message || msg}`);
+          console.log(`[CRON][${symbol}] ${msg?.message || msg}`);
+        },
+        status: () => ({ send: (msg) => {
+          fastify.log.warn(`[CRON][${symbol}] ${msg?.message || msg}`);
+          console.log(`[CRON][${symbol}] ${msg?.message || msg}`);
+        } })
       }
     );
   }, {
@@ -127,6 +135,7 @@ function createSymbolCronJob(symbolConfig) {
   });
 
   fastify.log.info(`[CRON] New job scheduled for symbol: ${symbol} with interval: ${checkInterval} | Strategy: ${sellStrategy || 'security'}`);
+  console.log(`[CRON] New job scheduled for symbol: ${symbol} with interval: ${checkInterval} | Strategy: ${sellStrategy || 'security'}`);
 }
 
 // Function to setup all cron jobs according to each symbol's interval
