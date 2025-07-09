@@ -2,31 +2,35 @@ const ordersService = require('../services/ordersService');
 const priceTrackingService = require('../services/priceTrackingService');
 const jobService = require('../services/jobService');
 const { JobConfig } = require('../models/JobConfig');
+const sellStrategies = require('../utils/sellStrategies');
 
 // Estratégias de venda parametrizadas (copiado do jobController)
-const sellStrategies = {
-  security: {
-    levels: [
-      { percentage: 0.3, priceIncrease: 0 },
-      { percentage: 0.3, priceIncrease: 0.05 },
-      { percentage: 0.2, priceIncrease: 0.10 },
-      { percentage: 0.2, priceIncrease: 0.15 }
-    ]
-  },
-  basic: {
-    levels: [
-      { percentage: 0.4, priceIncrease: 0 },
-      { percentage: 0.3, priceIncrease: 0.05 },
-      { percentage: 0.3, priceIncrease: 0.10 }
-    ]
-  },
-  aggressive: {
-    levels: [
-      { percentage: 1.0, priceIncrease: 0 }
-    ]
-  }
-};
+// const sellStrategies = {
+//   security: {
+//     levels: [
+//       { percentage: 0.3, priceIncrease: 0 },
+//       { percentage: 0.3, priceIncrease: 0.05 },
+//       { percentage: 0.2, priceIncrease: 0.10 },
+//       { percentage: 0.2, priceIncrease: 0.15 }
+//     ]
+//   },
+//   basic: {
+//     levels: [
+//       { percentage: 0.4, priceIncrease: 0 },
+//       { percentage: 0.3, priceIncrease: 0.05 },
+//       { percentage: 0.3, priceIncrease: 0.10 }
+//     ]
+//   },
+//   aggressive: {
+//     levels: [
+//       { percentage: 1.0, priceIncrease: 0 }
+//     ]
+//   }
+// };
 
+/**
+ * Handler de compra manual. Valida símbolo, executa ordem e atualiza tracking.
+ */
 async function buyHandler(request, reply) {
   const { symbol } = request.body;
   if (!symbol) {
@@ -37,20 +41,31 @@ async function buyHandler(request, reply) {
     const config = await JobConfig.findOne({ symbol });
     const strategy = config ? config.sellStrategy : undefined;
     const result = await ordersService.createBuyOrder(symbol);
-    // Atualiza o tracking de preço após compra bem-sucedida
-    if (result.status === 'success') {
+    if (result.status === 'success' && result._id) {
+      const Operation = require('../models/Operation');
+      const valueBRL = result.amount ? Number(result.amount) : null;
+      await Operation.updateOne(
+        { _id: result._id },
+        { $set: {
+            strategy: strategy,
+            amount: result.amount,
+            price: result.price, // já vem do ticker
+            valueBRL,
+            typeOperation: 'manual'
+          }
+        }
+      );
+      // Resetar tracker de venda/compra para liberar novas operações
+      try {
+        const { partialSales } = require('./jobController');
+        if (partialSales && partialSales.delete) partialSales.delete(symbol);
+      } catch (e) { /* ignora se não conseguir importar */ }
+      // Agora sim, atualize o tracking
       await priceTrackingService.updatePriceTracking(symbol);
     }
     // Valor em BRL para compra é o próprio amount
-    const valueBRL = result.amount ? Number(result.amount) : null;
     // Salvar/atualizar Operation com strategy, amount, price e valueBRL
-    if (result._id) {
-      const Operation = require('../models/Operation');
-      await Operation.updateOne(
-        { _id: result._id },
-        { $set: { strategy: strategy, amount: result.amount, price: result.price, valueBRL } }
-      );
-    }
+    // (já feito acima)
     return reply.send({
       ...result,
       strategy: strategy,
@@ -63,6 +78,9 @@ async function buyHandler(request, reply) {
   }
 }
 
+/**
+ * Handler de venda manual. Valida símbolo, executa ordem e atualiza tracking.
+ */
 async function sellHandler(request, reply) {
   const { symbol } = request.body;
   if (!symbol) {
@@ -92,11 +110,8 @@ async function sellHandler(request, reply) {
     const sells = await Operation.find({ symbol, type: 'sell', status: 'success' }).sort({ createdAt: 1 });
     // Descobrir qual nível da estratégia é o próximo
     let levelIdx = sells.length;
-    if (levelIdx >= strategyConfig.levels.length) {
-      return reply.status(400).send({ error: 'All strategy levels already executed for this symbol' });
-    }
-    const level = strategyConfig.levels[levelIdx];
-    const amount = Math.floor(available * level.percentage);
+    // Para venda manual, sempre permita vender 100% do saldo disponível
+    const amount = Math.floor(available);
     if (amount <= 0) {
       return reply.status(400).send({ error: 'Calculated sell amount is zero, cannot execute order.' });
     }
@@ -105,6 +120,18 @@ async function sellHandler(request, reply) {
     // Atualiza o tracking de preço após venda bem-sucedida
     if (result.status === 'success') {
       await priceTrackingService.updatePriceTracking(symbol);
+      // Resetar tracker de venda/compra para liberar novas operações
+      try {
+        const { partialSales } = require('./jobController');
+        if (partialSales && partialSales.delete) partialSales.delete(symbol);
+      } catch (e) { /* ignora se não conseguir importar */ }
+      // Marcar operação como manual
+      if (result._id) {
+        await Operation.updateOne(
+          { _id: result._id },
+          { $set: { typeOperation: 'manual' } }
+        );
+      }
     }
     // Valor em BRL para venda é amount * price
     const valueBRL = (result.amount && result.price) ? Number(result.amount) * Number(result.price) : null;
@@ -121,8 +148,8 @@ async function sellHandler(request, reply) {
       amount: result.amount,
       price: result.price,
       valueBRL,
-      level: levelIdx + 1,
-      percentage: level.percentage,
+      level: 1,
+      percentage: 1,
       amountUsed: amount
     });
   } catch (err) {

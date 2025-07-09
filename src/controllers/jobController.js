@@ -6,6 +6,7 @@ const ordersService = require('../services/ordersService');
 const priceTrackingService = require('../services/priceTrackingService');
 const Operation = require('../models/Operation');
 const cron = require('node-cron');
+const sellStrategies = require('../utils/sellStrategies');
 
 // New Relic logging helpers
 function logJobEvent(eventType, symbol, data = {}) {
@@ -51,42 +52,6 @@ const partialSales = new Map();
 // In-memory storage for monitoring state when thresholds are reached
 const buyMonitoringState = new Map();
 const sellMonitoringState = new Map();
-
-// Estratégias de venda parametrizadas por tipo
-const sellStrategies = {
-  security: {
-    name: 'Security',
-    description: 'Estratégia conservadora - vende 30% inicial e progressivo',
-    levels: [
-      { percentage: 0.3, priceIncrease: 0 },    // 30% no primeiro nível
-      { percentage: 0.3, priceIncrease: 0.05 }, // 30% em +5%
-      { percentage: 0.2, priceIncrease: 0.10 }, // 20% em +10%
-      { percentage: 0.2, priceIncrease: 0.15 }  // 20% em +15%
-    ],
-    trailingStop: 0.05, // 5% abaixo do preço mais alto
-    minSellValueBRL: 50 // mínimo R$50 por venda
-  },
-  basic: {
-    name: 'Basic',
-    description: 'Estratégia básica - vende 40% inicial e progressivo',
-    levels: [
-      { percentage: 0.4, priceIncrease: 0 },    // 40% no primeiro nível
-      { percentage: 0.3, priceIncrease: 0.05 }, // 30% em +5%
-      { percentage: 0.3, priceIncrease: 0.10 }  // 30% em +10%
-    ],
-    trailingStop: 0.05, // 5% abaixo do preço mais alto
-    minSellValueBRL: 50 // mínimo R$50 por venda
-  },
-  aggressive: {
-    name: 'Aggressive',
-    description: 'Estratégia agressiva - vende 100% imediatamente',
-    levels: [
-      { percentage: 1.0, priceIncrease: 0 }     // 100% imediatamente
-    ],
-    trailingStop: 0.02, // 2% abaixo do preço mais alto (mais agressivo)
-    minSellValueBRL: 50 // mínimo R$50 por venda
-  }
-};
 
 // Configuração padrão de monitoring
 const defaultMonitoringConfig = {
@@ -380,41 +345,10 @@ function cleanupOldStrategies() {
 // Run cleanup every hour
 setInterval(cleanupOldStrategies, 60 * 60 * 1000);
 
-async function jobStatusHandler(request, reply) {
-  try {
-    const config = await jobService.status();
-    // Return only symbol and status (enabled/disabled)
-    const simpleStatus = config.symbols.map(symbol => ({
-      symbol: symbol.symbol,
-      status: symbol.enabled
-    }));
-    return reply.send(simpleStatus);
-  } catch (err) {
-    return reply.status(500).send({ error: err.message });
-  }
-}
-
-async function jobToggleHandler(request, reply) {
-  try {
-    const { symbol } = request.params;
-    const config = await jobService.toggleSymbol(symbol);
-    
-    // Log symbol toggle
-    const symbolConfig = config.symbols.find(s => s.symbol === symbol);
-    logJobEvent('symbol_toggle', symbol, {
-      enabled: symbolConfig.enabled,
-      buyThreshold: symbolConfig.buyThreshold,
-      sellThreshold: symbolConfig.sellThreshold,
-      checkInterval: symbolConfig.checkInterval
-    });
-    
-    return reply.send(config);
-  } catch (err) {
-    logJobError(request.params.symbol, err, { context: 'jobToggleHandler' });
-    return reply.status(500).send({ error: err.message });
-  }
-}
-
+/**
+ * Handler principal do job de monitoramento automático.
+ * Executa lógica de thresholds, monitoramento e ordens.
+ */
 async function jobRunHandler(request, reply) {
   let symbol;
   try {

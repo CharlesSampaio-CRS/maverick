@@ -44,6 +44,10 @@ function signRequest(method, path, query = '', body = null) {
   return headers;
 }
 
+/**
+ * Cria uma ordem de compra a mercado para o símbolo informado.
+ * Valida saldo, calcula valor seguro e registra operação.
+ */
 async function createBuyOrder(symbol, amount = null) {
   const balanceService = require('./balanceService');
   const balance = await balanceService.getBalance('BRL');
@@ -115,6 +119,10 @@ async function createBuyOrder(symbol, amount = null) {
   }
 }
 
+/**
+ * Cria uma ordem de venda a mercado para o símbolo informado.
+ * Valida saldo, registra operação e calcula lucro/prejuízo.
+ */
 async function createSellOrder(symbol, amount) {
   // Validation of amount
   if (!amount || parseFloat(amount) <= 0) {

@@ -36,6 +36,10 @@ function signRequest(method, path, query = '', body = null) {
   return headers;
 }
 
+/**
+ * Obtém o saldo de uma moeda específica ou de todas as moedas.
+ * Usa cache para otimizar chamadas.
+ */
 async function getBalance(currency = null) {
   // Check cache first
   const cached = cacheService.getBalance(currency);
@@ -72,7 +76,9 @@ async function getBalance(currency = null) {
   }
 }
 
-// Get multiple balances efficiently
+/**
+ * Obtém saldos de múltiplas moedas de forma eficiente.
+ */
 async function getBalances(currencies) {
   const results = {};
   const uncachedCurrencies = [];
@@ -112,7 +118,9 @@ async function getBalances(currencies) {
   return results;
 }
 
-// Invalidate balance cache (useful after trades)
+/**
+ * Invalida o cache de saldo (útil após trades).
+ */
 function invalidateBalanceCache() {
   cacheService.invalidateBalance();
 }

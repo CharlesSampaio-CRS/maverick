@@ -8,39 +8,28 @@ const httpClient = axios.create({
   maxRedirects: 3
 });
 
+/**
+ * Obtém o ticker (preço e variação) de um símbolo.
+ * Sempre busca dado atualizado da API (sem cache).
+ */
 async function getTicker(symbol) {
-  // Check cache first
-  const cached = cacheService.getTicker(symbol);
-  if (cached) {
-    return cached;
-  }
-
   const path = '/v1/market/ticker';
   const url = `${BASE_URL}${path}?symbol=${symbol}`;
-  
   try {
     const res = await httpClient.get(url);
     const d = res.data.data;
-    
     if (!d) {
-      const errorResult = { success: false, error: 'Ticker not found or unexpected response', details: res.data };
-      cacheService.setTicker(symbol, errorResult);
-      return errorResult;
+      return { success: false, error: 'Ticker not found or unexpected response', details: res.data };
     }
-    
-    // Use API's changePercent24h if available, otherwise calculate manually
     let changePercent = d.changePercent24h;
     if (!changePercent || changePercent === '0' || changePercent === '0.00') {
       const currentPrice = parseFloat(d.lastPrice);
       const openPrice = parseFloat(d.open24h);
       changePercent = ((currentPrice - openPrice) / openPrice * 100).toFixed(2);
     }
-    
-    // Log data freshness
     const now = Date.now();
     const dataAge = now - d.timestamp;
-    
-    const result = {
+    return {
       success: true,
       symbol: d.symbol,
       lastPrice: d.lastPrice,
@@ -54,51 +43,29 @@ async function getTicker(symbol) {
       change24h: d.change24h,
       changePercent24h: changePercent,
       timestamp: d.timestamp,
-      dataAge: Math.round(dataAge/1000) // Age in seconds
+      dataAge: Math.round(dataAge/1000)
     };
-
-    // Cache the result
-    cacheService.setTicker(symbol, result);
-    
-    return result;
   } catch (err) {
     console.error(`[TICKER] Error fetching ${symbol}:`, err.message);
-    const errorResult = { success: false, error: err.message };
-    cacheService.setTicker(symbol, errorResult);
-    return errorResult;
+    return { success: false, error: err.message };
   }
 }
 
-// Batch ticker fetching for multiple symbols
+/**
+ * Obtém tickers de múltiplos símbolos em batch (sem cache).
+ */
 async function getTickers(symbols) {
   const results = {};
-  const uncachedSymbols = [];
-  
-  // Check cache for each symbol
-  for (const symbol of symbols) {
-    const cached = cacheService.getTicker(symbol);
-    if (cached) {
-      results[symbol] = cached;
+  const promises = symbols.map(symbol => getTicker(symbol));
+  const fetchedResults = await Promise.allSettled(promises);
+  symbols.forEach((symbol, index) => {
+    const result = fetchedResults[index];
+    if (result.status === 'fulfilled') {
+      results[symbol] = result.value;
     } else {
-      uncachedSymbols.push(symbol);
+      results[symbol] = { success: false, error: result.reason.message };
     }
-  }
-  
-  // Fetch uncached symbols in parallel
-  if (uncachedSymbols.length > 0) {
-    const promises = uncachedSymbols.map(symbol => getTicker(symbol));
-    const fetchedResults = await Promise.allSettled(promises);
-    
-    uncachedSymbols.forEach((symbol, index) => {
-      const result = fetchedResults[index];
-      if (result.status === 'fulfilled') {
-        results[symbol] = result.value;
-      } else {
-        results[symbol] = { success: false, error: result.reason.message };
-      }
-    });
-  }
-  
+  });
   return results;
 }
 

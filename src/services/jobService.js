@@ -1,10 +1,16 @@
 const { JobConfig, GlobalConfig } = require('../models/JobConfig');
 const cacheService = require('./cacheService');
 
+/**
+ * Retorna a configuração atual do job (global e por símbolo).
+ */
 async function status() {
   return await cacheService.getJobConfig();
 }
 
+/**
+ * Atualiza configuração global ou de símbolo.
+ */
 async function updateConfig(body) {
   // Se o body tem symbol, é um símbolo individual
   if (body.symbol) {
@@ -55,6 +61,9 @@ async function updateConfig(body) {
   return await status();
 }
 
+/**
+ * Alterna o status (habilitado/desabilitado) de um símbolo.
+ */
 async function toggleSymbol(symbol) {
   const symbolConfig = await JobConfig.findOne({ symbol });
   if (!symbolConfig) {
@@ -70,6 +79,9 @@ async function toggleSymbol(symbol) {
   return await status();
 }
 
+/**
+ * Remove um símbolo da configuração.
+ */
 async function removeSymbol(symbol) {
   const result = await JobConfig.deleteOne({ symbol });
   if (result.deletedCount === 0) {
@@ -81,6 +93,9 @@ async function removeSymbol(symbol) {
   return await status();
 }
 
+/**
+ * Adiciona um novo símbolo à configuração.
+ */
 async function addSymbol(body) {
   if (!body.symbol) throw new Error('Symbol is required');
   
@@ -103,6 +118,9 @@ async function addSymbol(body) {
   return await status();
 }
 
+/**
+ * Atualiza configuração de um símbolo específico.
+ */
 async function updateSymbol(symbol, body) {
   const symbolConfig = await JobConfig.findOne({ symbol });
   if (!symbolConfig) {
@@ -123,6 +141,9 @@ async function updateSymbol(symbol, body) {
   return await status();
 }
 
+/**
+ * Retorna a configuração de um símbolo específico.
+ */
 async function getSymbol(symbol) {
   const symbolConfig = await JobConfig.findOne({ symbol }).lean();
   if (!symbolConfig) {

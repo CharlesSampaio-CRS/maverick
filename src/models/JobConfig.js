@@ -16,6 +16,8 @@ const JobConfigSchema = new mongoose.Schema({
   // Novos campos para controle de preços
   minBuyPrice: { type: Number, default: null }, // Preço mínimo para compra (baseado no histórico)
   maxSellPrice: { type: Number, default: null }, // Preço máximo para venda (baseado no histórico)
+  lastPriceBuy: { type: Number, default: null }, // Valor da última compra
+  lastPriceSell: { type: Number, default: null }, // Valor da última venda
   priceTrackingEnabled: { type: Boolean, default: true }, // Habilitar tracking de preços
   minProfitPercent: { type: Number, default: 2.0 }, // Lucro mínimo percentual para considerar compra
   

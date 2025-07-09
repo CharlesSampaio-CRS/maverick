@@ -3,7 +3,7 @@ const { JobConfig } = require('../models/JobConfig');
 
 class PriceTrackingService {
   /**
-   * Atualiza os preços mínimos/máximos baseado no histórico de operações
+   * Atualiza os preços mínimos/máximos baseado no histórico de operações.
    */
   async updatePriceTracking(symbol) {
     try {
@@ -39,6 +39,8 @@ class PriceTrackingService {
           updated = true;
           console.log(`[PRICE_TRACKING] Updated minBuyPrice for ${symbol}: ${minBuyPrice} (based on last sell: ${lastSell.price}, buyThreshold: ${buyThreshold}%)`);
         }
+        // Salva o valor da última venda
+        config.lastPriceSell = lastSell.price;
       }
 
       // Atualizar preço máximo de venda
@@ -51,6 +53,8 @@ class PriceTrackingService {
           updated = true;
           console.log(`[PRICE_TRACKING] Updated maxSellPrice for ${symbol}: ${maxSellPrice} (based on last buy: ${lastBuy.price}, sellThreshold: ${sellThreshold}%)`);
         }
+        // Salva o valor da última compra
+        config.lastPriceBuy = lastBuy.price;
       }
 
       if (updated) {
@@ -63,8 +67,8 @@ class PriceTrackingService {
         updated,
         minBuyPrice: config.minBuyPrice,
         maxSellPrice: config.maxSellPrice,
-        lastBuyPrice: lastBuy?.price,
-        lastSellPrice: lastSell?.price
+        lastPriceBuy: config.lastPriceBuy,
+        lastPriceSell: config.lastPriceSell
       };
 
     } catch (error) {
@@ -74,7 +78,7 @@ class PriceTrackingService {
   }
 
   /**
-   * Verifica se o preço atual é adequado para compra
+   * Verifica se o preço atual é adequado para compra.
    */
   async shouldBuyAtPrice(symbol, currentPrice) {
     try {
@@ -83,28 +87,26 @@ class PriceTrackingService {
         return { shouldBuy: true, reason: 'Price tracking disabled' };
       }
 
-      // Se não há preço mínimo definido, permite compra
-      if (!config.minBuyPrice) {
-        return { shouldBuy: true, reason: 'No minimum buy price set' };
+      // Se não há lastPriceBuy, permite compra
+      if (!config.lastPriceBuy) {
+        return { shouldBuy: true, reason: 'No lastPriceBuy set' };
       }
 
-      // Verificar se preço atual está abaixo do mínimo
-      if (currentPrice >= config.minBuyPrice) {
-        return { 
-          shouldBuy: false, 
-          reason: `Current price (${currentPrice}) >= minBuyPrice (${config.minBuyPrice})`,
-          currentPrice,
-          minBuyPrice: config.minBuyPrice,
-          difference: ((currentPrice - config.minBuyPrice) / config.minBuyPrice * 100).toFixed(2) + '%'
+      // Considera o sellThreshold como margem para nova compra
+      const sellThreshold = typeof config.sellThreshold === 'number' ? config.sellThreshold : 0;
+      const buyLimit = Number((config.lastPriceBuy * (1 + sellThreshold / 100)).toFixed(10));
+      const roundedCurrentPrice = Number(currentPrice.toFixed(10));
+      console.log('[DEBUG shouldBuyAtPrice] roundedCurrentPrice:', roundedCurrentPrice, 'buyLimit:', buyLimit);
+      if (roundedCurrentPrice >= buyLimit) {
+        return {
+          shouldBuy: false,
+          reason: `Current price (${currentPrice}) >= lastPriceBuy (${config.lastPriceBuy}) + sellThreshold (${sellThreshold}%) = ${buyLimit}`
         };
       }
 
-      return { 
-        shouldBuy: true, 
-        reason: `Current price (${currentPrice}) < minBuyPrice (${config.minBuyPrice})`,
-        currentPrice,
-        minBuyPrice: config.minBuyPrice,
-        discount: ((config.minBuyPrice - currentPrice) / config.minBuyPrice * 100).toFixed(2) + '%'
+      return {
+        shouldBuy: true,
+        reason: `Current price (${currentPrice}) < lastPriceBuy (${config.lastPriceBuy}) + sellThreshold (${sellThreshold}%) = ${buyLimit}`
       };
 
     } catch (error) {
@@ -114,7 +116,7 @@ class PriceTrackingService {
   }
 
   /**
-   * Verifica se o preço atual é adequado para venda
+   * Verifica se o preço atual é adequado para venda.
    */
   async shouldSellAtPrice(symbol, currentPrice) {
     try {
@@ -123,28 +125,25 @@ class PriceTrackingService {
         return { shouldSell: true, reason: 'Price tracking disabled' };
       }
 
-      // Se não há preço máximo definido, permite venda
-      if (!config.maxSellPrice) {
-        return { shouldSell: true, reason: 'No maximum sell price set' };
+      // Se não há lastPriceSell, permite venda
+      if (!config.lastPriceSell) {
+        return { shouldSell: true, reason: 'No lastPriceSell set' };
       }
 
-      // Verificar se preço atual está acima do máximo
-      if (currentPrice <= config.maxSellPrice) {
-        return { 
-          shouldSell: false, 
-          reason: `Current price (${currentPrice}) <= maxSellPrice (${config.maxSellPrice})`,
-          currentPrice,
-          maxSellPrice: config.maxSellPrice,
-          difference: ((config.maxSellPrice - currentPrice) / config.maxSellPrice * 100).toFixed(2) + '%'
+      // Considera o buyThreshold como margem para nova venda
+      const buyThreshold = typeof config.buyThreshold === 'number' ? config.buyThreshold : 0;
+      const sellLimit = Number((config.lastPriceSell * (1 + buyThreshold / 100)).toFixed(10));
+      const roundedCurrentPrice = Number(currentPrice.toFixed(10));
+      if (roundedCurrentPrice <= sellLimit) {
+        return {
+          shouldSell: false,
+          reason: `Current price (${currentPrice}) <= lastPriceSell (${config.lastPriceSell}) + buyThreshold (${buyThreshold}%) = ${sellLimit}`
         };
       }
 
-      return { 
-        shouldSell: true, 
-        reason: `Current price (${currentPrice}) > maxSellPrice (${config.maxSellPrice})`,
-        currentPrice,
-        maxSellPrice: config.maxSellPrice,
-        premium: ((currentPrice - config.maxSellPrice) / config.maxSellPrice * 100).toFixed(2) + '%'
+      return {
+        shouldSell: true,
+        reason: `Current price (${currentPrice}) > lastPriceSell (${config.lastPriceSell}) + buyThreshold (${buyThreshold}%) = ${sellLimit}`
       };
 
     } catch (error) {
@@ -154,7 +153,7 @@ class PriceTrackingService {
   }
 
   /**
-   * Obtém estatísticas de preços para um símbolo
+   * Obtém estatísticas de preços para um símbolo.
    */
   async getPriceStats(symbol) {
     try {
@@ -187,8 +186,8 @@ class PriceTrackingService {
         minBuyPrice: config.minBuyPrice,
         maxSellPrice: config.maxSellPrice,
         minProfitPercent: config.minProfitPercent,
-        lastBuyPrice: lastBuy?.price,
-        lastSellPrice: lastSell?.price,
+        lastPriceBuy: config.lastPriceBuy,
+        lastPriceSell: config.lastPriceSell,
         avgBuyPrice,
         avgSellPrice,
         totalOperations: recentOperations.length,
@@ -201,30 +200,6 @@ class PriceTrackingService {
       return { success: false, error: error.message };
     }
   }
-
-  /**
-   * Reseta os preços de tracking para um símbolo
-   */
-  async resetPriceTracking(symbol) {
-    try {
-      const config = await JobConfig.findOne({ symbol });
-      if (!config) {
-        return { success: false, reason: 'Symbol not found' };
-      }
-
-      config.minBuyPrice = null;
-      config.maxSellPrice = null;
-      config.updatedAt = new Date();
-      await config.save();
-
-      console.log(`[PRICE_TRACKING] Reset price tracking for ${symbol}`);
-      return { success: true, message: 'Price tracking reset successfully' };
-
-    } catch (error) {
-      console.error(`[PRICE_TRACKING] Error resetting price tracking for ${symbol}:`, error);
-      return { success: false, error: error.message };
-    }
-  }
 }
 
-module.exports = new PriceTrackingService(); 
+module.exports = new PriceTrackingService();
