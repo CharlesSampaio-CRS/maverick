@@ -31,23 +31,25 @@ class PriceTrackingService {
 
       // Atualizar preço mínimo de compra
       if (lastSell && lastSell.price) {
-        const minBuyPrice = lastSell.price * (1 - config.minProfitPercent / 100);
-        
+        // Usa buyThreshold (ex: -8 para -8%)
+        const buyThreshold = typeof config.buyThreshold === 'number' ? config.buyThreshold : -2;
+        const minBuyPrice = lastSell.price * (1 + (buyThreshold / 100));
         if (!config.minBuyPrice || minBuyPrice < config.minBuyPrice) {
           config.minBuyPrice = minBuyPrice;
           updated = true;
-          console.log(`[PRICE_TRACKING] Updated minBuyPrice for ${symbol}: ${minBuyPrice} (based on last sell: ${lastSell.price})`);
+          console.log(`[PRICE_TRACKING] Updated minBuyPrice for ${symbol}: ${minBuyPrice} (based on last sell: ${lastSell.price}, buyThreshold: ${buyThreshold}%)`);
         }
       }
 
       // Atualizar preço máximo de venda
       if (lastBuy && lastBuy.price) {
-        const maxSellPrice = lastBuy.price * (1 + config.minProfitPercent / 100);
-        
+        // Usa sellThreshold (ex: 10 para +10%)
+        const sellThreshold = typeof config.sellThreshold === 'number' ? config.sellThreshold : 2;
+        const maxSellPrice = lastBuy.price * (1 + (sellThreshold / 100));
         if (!config.maxSellPrice || maxSellPrice > config.maxSellPrice) {
           config.maxSellPrice = maxSellPrice;
           updated = true;
-          console.log(`[PRICE_TRACKING] Updated maxSellPrice for ${symbol}: ${maxSellPrice} (based on last buy: ${lastBuy.price})`);
+          console.log(`[PRICE_TRACKING] Updated maxSellPrice for ${symbol}: ${maxSellPrice} (based on last buy: ${lastBuy.price}, sellThreshold: ${sellThreshold}%)`);
         }
       }
 

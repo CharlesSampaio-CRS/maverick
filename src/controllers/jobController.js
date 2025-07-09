@@ -1009,7 +1009,7 @@ async function jobConfigHandler(request, reply) {
     if (request.body.symbol) {
       console.log('[JOB CONFIG] Processing symbol-specific config for:', request.body.symbol);
       
-      const config = await jobService.updateConfig(request.body);
+    const config = await jobService.updateConfig(request.body);
       console.log('[JOB CONFIG] Full config returned:', JSON.stringify(config, null, 2));
       
       // Update cron schedule if available
@@ -1042,22 +1042,22 @@ async function jobConfigHandler(request, reply) {
       console.log('[JOB CONFIG] Processing global config update');
       
       const config = await jobService.updateConfig(request.body);
-      
-      // Update cron schedule if available
-      if (request.server.updateCronSchedule) {
-        await request.server.updateCronSchedule();
-      }
-      
-      // Log configuration update
-      logJobEvent('config_update', 'system', {
-        enabled: config.enabled,
-        cooldownMinutes: config.cooldownMinutes || 30,
-        totalSymbols: config.symbols.length,
-        enabledSymbols: config.symbols.filter(s => s.enabled).length,
-        disabledSymbols: config.symbols.filter(s => !s.enabled).length
-      });
+    
+    // Update cron schedule if available
+    if (request.server.updateCronSchedule) {
+      await request.server.updateCronSchedule();
+    }
+    
+    // Log configuration update
+    logJobEvent('config_update', 'system', {
+      enabled: config.enabled,
+      cooldownMinutes: config.cooldownMinutes || 30,
+      totalSymbols: config.symbols.length,
+      enabledSymbols: config.symbols.filter(s => s.enabled).length,
+      disabledSymbols: config.symbols.filter(s => !s.enabled).length
+    });
 
-      return reply.send(config);
+    return reply.send(config);
     }
   } catch (err) {
     console.error(`[JOB CONFIG] Error: ${err.message}`);
