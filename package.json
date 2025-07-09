@@ -18,6 +18,7 @@
     "node-cron": "^3.0.3"
   },
   "devDependencies": {
-    "axios": "^1.10.0"
+    "axios": "^1.10.0",
+    "rewire": "^9.0.0"
   }
 }

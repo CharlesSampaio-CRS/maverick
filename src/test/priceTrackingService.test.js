@@ -44,33 +44,36 @@ describe('PriceTrackingService', () => {
       expect(result.shouldBuy).toBe(true);
     });
 
-    it('não deve permitir compra se preço for igual ao limite com sellThreshold', async () => {
-      const sellThreshold = 10;
-      JobConfig.__setMockData('MOG_BRL', { priceTrackingEnabled: true, lastPriceBuy: realPrice, sellThreshold });
-      const limite = Number((realPrice * 1.10).toFixed(10));
-      console.log('[DEBUG TESTE] realPrice:', realPrice, 'sellThreshold:', sellThreshold, 'lastPriceBuy:', realPrice, 'limite:', limite, 'precoTestado:', limite);
+    it('não deve permitir compra se preço for igual ao limite com sellThreshold negativo', async () => {
+      const sellThreshold = -15;
+      const lastBuyPrice = realPrice;
+      JobConfig.__setMockData('MOG_BRL', { priceTrackingEnabled: true, lastBuyPrice, sellThreshold });
+      const limite = Number((lastBuyPrice * (1 + sellThreshold / 100)).toFixed(10));
+      console.log('[DEBUG TESTE] realPrice:', realPrice, 'sellThreshold:', sellThreshold, 'lastBuyPrice:', lastBuyPrice, 'limite:', limite, 'precoTestado:', limite);
       const result = await priceTrackingService.shouldBuyAtPrice('MOG_BRL', limite);
       console.log('shouldBuyAtPrice - igual ao limite:', result);
       expect(result.shouldBuy).toBe(false);
     });
 
-    it('não deve permitir compra se preço for maior que o limite com sellThreshold', async () => {
-      const sellThreshold = 10;
-      JobConfig.__setMockData('MOG_BRL', { priceTrackingEnabled: true, lastPriceBuy: realPrice, sellThreshold });
-      const precoTestado = realPrice * 1.11;
-      const limite = Number((realPrice * 1.10).toFixed(10));
-      console.log('[DEBUG TESTE] realPrice:', realPrice, 'sellThreshold:', sellThreshold, 'lastPriceBuy:', realPrice, 'limite:', limite, 'precoTestado:', precoTestado);
+    it('não deve permitir compra se preço for maior que o limite com sellThreshold negativo', async () => {
+      const sellThreshold = -15;
+      const lastBuyPrice = realPrice;
+      JobConfig.__setMockData('MOG_BRL', { priceTrackingEnabled: true, lastBuyPrice, sellThreshold });
+      const limite = Number((lastBuyPrice * (1 + sellThreshold / 100)).toFixed(10));
+      const precoTestado = limite + 0.0000000001; // ligeiramente maior
+      console.log('[DEBUG TESTE] realPrice:', realPrice, 'sellThreshold:', sellThreshold, 'lastBuyPrice:', lastBuyPrice, 'limite:', limite, 'precoTestado:', precoTestado);
       const result = await priceTrackingService.shouldBuyAtPrice('MOG_BRL', precoTestado);
       console.log('shouldBuyAtPrice - maior que o limite:', result);
       expect(result.shouldBuy).toBe(false);
     });
 
-    it('deve permitir compra se preço for menor que o limite com sellThreshold', async () => {
-      const sellThreshold = 10;
-      JobConfig.__setMockData('MOG_BRL', { priceTrackingEnabled: true, lastPriceBuy: realPrice, sellThreshold });
-      const precoTestado = realPrice * 0.99;
-      const limite = Number((realPrice * 1.10).toFixed(10));
-      console.log('[DEBUG TESTE] realPrice:', realPrice, 'sellThreshold:', sellThreshold, 'lastPriceBuy:', realPrice, 'limite:', limite, 'precoTestado:', precoTestado);
+    it('deve permitir compra se preço for menor que o limite com sellThreshold negativo', async () => {
+      const sellThreshold = -15;
+      const lastBuyPrice = realPrice;
+      JobConfig.__setMockData('MOG_BRL', { priceTrackingEnabled: true, lastBuyPrice, sellThreshold });
+      const limite = Number((lastBuyPrice * (1 + sellThreshold / 100)).toFixed(10));
+      const precoTestado = limite - 0.0000000001; // ligeiramente menor
+      console.log('[DEBUG TESTE] realPrice:', realPrice, 'sellThreshold:', sellThreshold, 'lastBuyPrice:', lastBuyPrice, 'limite:', limite, 'precoTestado:', precoTestado);
       const result = await priceTrackingService.shouldBuyAtPrice('MOG_BRL', precoTestado);
       console.log('shouldBuyAtPrice - menor que o limite:', result);
       expect(result.shouldBuy).toBe(true);
@@ -94,33 +97,36 @@ describe('PriceTrackingService', () => {
       expect(result.shouldSell).toBe(true);
     });
 
-    it('não deve permitir venda se preço for igual ao limite com buyThreshold', async () => {
-      const buyThreshold = 10;
-      JobConfig.__setMockData('MOG_BRL', { priceTrackingEnabled: true, lastPriceSell: realPrice, buyThreshold });
-      const limite = Number((realPrice * 1.10).toFixed(2));
-      console.log('[DEBUG TESTE] realPrice:', realPrice, 'buyThreshold:', buyThreshold, 'lastPriceSell:', realPrice, 'limite:', limite, 'precoTestado:', limite);
+    it('não deve permitir venda se preço for igual ao limite com buyThreshold negativo', async () => {
+      const buyThreshold = -10;
+      const lastSellPrice = realPrice;
+      JobConfig.__setMockData('MOG_BRL', { priceTrackingEnabled: true, lastSellPrice, buyThreshold });
+      const limite = Number((lastSellPrice * (1 + buyThreshold / 100)).toFixed(10));
+      console.log('[DEBUG TESTE] realPrice:', realPrice, 'buyThreshold:', buyThreshold, 'lastSellPrice:', lastSellPrice, 'limite:', limite, 'precoTestado:', limite);
       const result = await priceTrackingService.shouldSellAtPrice('MOG_BRL', limite);
       console.log('shouldSellAtPrice - igual ao limite:', result);
       expect(result.shouldSell).toBe(false);
     });
 
-    it('não deve permitir venda se preço for menor que o limite com buyThreshold', async () => {
-      const buyThreshold = 10;
-      JobConfig.__setMockData('MOG_BRL', { priceTrackingEnabled: true, lastPriceSell: realPrice, buyThreshold });
-      const precoTestado = realPrice * 0.99;
-      const limite = Number((realPrice * 1.10).toFixed(2));
-      console.log('[DEBUG TESTE] realPrice:', realPrice, 'buyThreshold:', buyThreshold, 'lastPriceSell:', realPrice, 'limite:', limite, 'precoTestado:', precoTestado);
+    it('não deve permitir venda se preço for menor que o limite com buyThreshold negativo', async () => {
+      const buyThreshold = -10;
+      const lastSellPrice = realPrice;
+      JobConfig.__setMockData('MOG_BRL', { priceTrackingEnabled: true, lastSellPrice, buyThreshold });
+      const limite = Number((lastSellPrice * (1 + buyThreshold / 100)).toFixed(10));
+      const precoTestado = limite - 0.0000000001; // ligeiramente menor
+      console.log('[DEBUG TESTE] realPrice:', realPrice, 'buyThreshold:', buyThreshold, 'lastSellPrice:', lastSellPrice, 'limite:', limite, 'precoTestado:', precoTestado);
       const result = await priceTrackingService.shouldSellAtPrice('MOG_BRL', precoTestado);
       console.log('shouldSellAtPrice - menor que o limite:', result);
       expect(result.shouldSell).toBe(false);
     });
 
-    it('deve permitir venda se preço for maior que o limite com buyThreshold', async () => {
-      const buyThreshold = 10;
-      JobConfig.__setMockData('MOG_BRL', { priceTrackingEnabled: true, lastPriceSell: realPrice, buyThreshold });
-      const precoTestado = realPrice * 1.11;
-      const limite = Number((realPrice * 1.10).toFixed(2));
-      console.log('[DEBUG TESTE] realPrice:', realPrice, 'buyThreshold:', buyThreshold, 'lastPriceSell:', realPrice, 'limite:', limite, 'precoTestado:', precoTestado);
+    it('deve permitir venda se preço for maior que o limite com buyThreshold negativo', async () => {
+      const buyThreshold = -10;
+      const lastSellPrice = realPrice;
+      JobConfig.__setMockData('MOG_BRL', { priceTrackingEnabled: true, lastSellPrice, buyThreshold });
+      const limite = Number((lastSellPrice * (1 + buyThreshold / 100)).toFixed(10));
+      const precoTestado = limite + 0.0000000001; // ligeiramente maior
+      console.log('[DEBUG TESTE] realPrice:', realPrice, 'buyThreshold:', buyThreshold, 'lastSellPrice:', lastSellPrice, 'limite:', limite, 'precoTestado:', precoTestado);
       const result = await priceTrackingService.shouldSellAtPrice('MOG_BRL', precoTestado);
       console.log('shouldSellAtPrice - maior que o limite:', result);
       expect(result.shouldSell).toBe(true);

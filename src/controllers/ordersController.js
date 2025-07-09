@@ -1,32 +1,7 @@
 const ordersService = require('../services/ordersService');
 const priceTrackingService = require('../services/priceTrackingService');
-const jobService = require('../services/jobService');
 const { JobConfig } = require('../models/JobConfig');
 const sellStrategies = require('../utils/sellStrategies');
-
-// Estratégias de venda parametrizadas (copiado do jobController)
-// const sellStrategies = {
-//   security: {
-//     levels: [
-//       { percentage: 0.3, priceIncrease: 0 },
-//       { percentage: 0.3, priceIncrease: 0.05 },
-//       { percentage: 0.2, priceIncrease: 0.10 },
-//       { percentage: 0.2, priceIncrease: 0.15 }
-//     ]
-//   },
-//   basic: {
-//     levels: [
-//       { percentage: 0.4, priceIncrease: 0 },
-//       { percentage: 0.3, priceIncrease: 0.05 },
-//       { percentage: 0.3, priceIncrease: 0.10 }
-//     ]
-//   },
-//   aggressive: {
-//     levels: [
-//       { percentage: 1.0, priceIncrease: 0 }
-//     ]
-//   }
-// };
 
 /**
  * Handler de compra manual. Valida símbolo, executa ordem e atualiza tracking.
@@ -54,6 +29,11 @@ async function buyHandler(request, reply) {
             typeOperation: 'manual'
           }
         }
+      );
+      // Atualizar lastBuyPrice no JobConfig
+      await JobConfig.updateOne(
+        { symbol },
+        { $set: { lastBuyPrice: result.price, updatedAt: new Date() } }
       );
       // Resetar tracker de venda/compra para liberar novas operações
       try {
@@ -120,6 +100,11 @@ async function sellHandler(request, reply) {
     // Atualiza o tracking de preço após venda bem-sucedida
     if (result.status === 'success') {
       await priceTrackingService.updatePriceTracking(symbol);
+      // Atualizar lastSellPrice no JobConfig
+      await JobConfig.updateOne(
+        { symbol },
+        { $set: { lastSellPrice: result.price, updatedAt: new Date() } }
+      );
       // Resetar tracker de venda/compra para liberar novas operações
       try {
         const { partialSales } = require('./jobController');

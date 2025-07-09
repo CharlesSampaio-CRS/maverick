@@ -7,6 +7,7 @@ const priceTrackingService = require('../services/priceTrackingService');
 const Operation = require('../models/Operation');
 const cron = require('node-cron');
 const sellStrategies = require('../utils/sellStrategies');
+const JobConfig = require('../models/JobConfig'); // Added import for JobConfig
 
 // New Relic logging helpers
 function logJobEvent(eventType, symbol, data = {}) {
@@ -523,14 +524,14 @@ async function jobRunHandler(request, reply) {
         // Check if sell monitoring is enabled for this strategy
         const strategyConfig = getStrategyConfig(symbolConfig);
         if (symbolConfig.monitoringEnabled) {
-          // NOVO: Checar maxSellPrice antes de iniciar o monitoramento
+          // NOVO: Checar lastSellPrice antes de iniciar o monitoramento
           const priceStats = await priceTrackingService.getPriceStats(symbol);
-          const maxSellPrice = priceStats.maxSellPrice;
+          const lastSellPrice = priceStats.lastSellPrice;
           const currentPrice = parseFloat(ticker.lastPrice);
-          if (!maxSellPrice || currentPrice < maxSellPrice) {
+          if (!lastSellPrice || currentPrice < lastSellPrice) {
             return reply.send({
               success: false,
-              message: `Sell not started: current price (${currentPrice}) has not reached the minimum sell price (${maxSellPrice}) yet.`
+              message: `Sell not started: current price (${currentPrice}) has not reached the minimum sell price (${lastSellPrice}) yet.`
             });
           }
           // Start sell monitoring instead of selling immediately
@@ -591,7 +592,16 @@ async function jobRunHandler(request, reply) {
     // 4. Execute order
     if (action === 'buy') {
       const currentPrice = parseFloat(ticker.lastPrice);
-      
+      // Só permite comprar se o preço atual for menor que lastSellPrice + sellThreshold%
+      if (symbolConfig.lastSellPrice) {
+        const buyLimit = symbolConfig.lastSellPrice * (1 + (symbolConfig.sellThreshold / 100));
+        if (currentPrice >= buyLimit) {
+          return reply.send({
+            success: false,
+            message: `Buy skipped: current price (${currentPrice}) is not less than lastSellPrice (${symbolConfig.lastSellPrice}) + sellThreshold (${symbolConfig.sellThreshold}%) = ${buyLimit}`
+          });
+        }
+      }
       // Verificar se o preço atual é adequado para compra
       const priceCheck = await priceTrackingService.shouldBuyAtPrice(symbol, currentPrice);
       if (!priceCheck.shouldBuy) {
@@ -635,6 +645,11 @@ async function jobRunHandler(request, reply) {
       // Atualizar tracking de preços após compra bem-sucedida
       if (op.status === 'success') {
         await priceTrackingService.updatePriceTracking(symbol);
+        // Atualizar lastBuyPrice no JobConfig
+        await JobConfig.updateOne(
+          { symbol },
+          { $set: { lastBuyPrice: currentPrice, updatedAt: new Date() } }
+        );
       }
       
       // Log buy execution
@@ -716,10 +731,13 @@ async function jobRunHandler(request, reply) {
         if (op.status === 'success') {
           tracker = new PartialSaleTracker(symbol, amount, currentPrice, strategyConfig);
           partialSales.set(symbol, tracker);
-          
           // Atualizar tracking de preços após venda bem-sucedida
           await priceTrackingService.updatePriceTracking(symbol);
-          
+          // Atualizar lastSellPrice no JobConfig
+          await JobConfig.updateOne(
+            { symbol },
+            { $set: { lastSellPrice: currentPrice, updatedAt: new Date() } }
+          );
           // Log first sell execution
           logJobEvent('sell_first_executed', symbol, { 
             amount: firstSellAmount, 
@@ -1224,56 +1242,6 @@ async function jobStrategyStatusHandler(request, reply) {
   }
 }
 
-// Endpoint to get the sale strategy configuration
-async function getSaleStrategyConfigHandler(request, reply) {
-  return reply.send(sellStrategies);
-}
-
-// Endpoint to update the sale strategy configuration
-async function updateSaleStrategyConfigHandler(request, reply) {
-  try {
-    const { strategyType, levels, trailingStop, minSellValueBRL } = request.body;
-    const strategyConfig = sellStrategies[strategyType];
-
-    if (!strategyConfig) {
-      return reply.status(400).send({ error: `Strategy type "${strategyType}" not found.` });
-    }
-
-    if (levels) {
-      // Basic validation of levels
-      if (!Array.isArray(levels) || levels.length === 0) {
-        return reply.status(400).send({ error: 'levels must be a non-empty array' });
-      }
-      let total = 0;
-      for (const l of levels) {
-        if (typeof l.percentage !== 'number' || typeof l.priceIncrease !== 'number') {
-          return reply.status(400).send({ error: 'Each level must have numeric percentage and priceIncrease' });
-        }
-        total += l.percentage;
-      }
-      if (Math.abs(total - 1) > 0.01) {
-        return reply.status(400).send({ error: 'The sum of percentages must be 1 (100%)' });
-      }
-      strategyConfig.levels = levels;
-    }
-    if (typeof trailingStop === 'number') {
-      if (trailingStop < 0.01 || trailingStop > 0.5) {
-        return reply.status(400).send({ error: 'trailingStop must be between 0.01 and 0.5 (1% to 50%)' });
-      }
-      strategyConfig.trailingStop = trailingStop;
-    }
-    if (typeof minSellValueBRL === 'number') {
-      if (minSellValueBRL < 10) {
-        return reply.status(400).send({ error: 'minSellValueBRL must be at least 10' });
-      }
-      strategyConfig.minSellValueBRL = minSellValueBRL;
-    }
-    return reply.send(sellStrategies);
-  } catch (err) {
-    return reply.status(500).send({ error: err.message });
-  }
-}
-
 // Endpoint to get total profit/loss
 async function getProfitSummaryHandler(request, reply) {
   try {
@@ -1334,6 +1302,9 @@ async function getMonitoringStatusHandler(request, reply) {
       ...monitoring.getStatus()
     }));
     
+    if (buyMonitoring.length === 0 && sellMonitoring.length === 0) {
+      return reply.send({ message: 'Sem monitoramento ativo no momento.' });
+    }
     return reply.send({
       buyMonitoring,
       sellMonitoring,
@@ -1411,6 +1382,47 @@ async function jobToggleHandler(request, reply) {
   }
 }
 
+// Handler for /job/strategies: returns all strategies with description and rule
+async function getAllStrategiesHandler(request, reply) {
+  try {
+    const strategies = Object.entries(sellStrategies).map(([type, strategy]) => {
+      // Build a detailed rule description
+      let ruleDescription = '';
+      if (strategy.levels && Array.isArray(strategy.levels)) {
+        ruleDescription += `Venda em ${strategy.levels.length} etapas: `;
+        ruleDescription += strategy.levels.map((level, idx) => {
+          const pct = (level.percentage * 100).toFixed(0) + '%';
+          const inc = (level.priceIncrease * 100).toFixed(1) + '%';
+          return `${pct} a partir de +${inc}`;
+        }).join(', ') + '. ';
+      }
+      if (strategy.trailingStop) {
+        ruleDescription += `Stop móvel: se o preço cair ${
+          (strategy.trailingStop * 100).toFixed(1)
+        }% do topo, vende o restante. `;
+      }
+      if (strategy.minSellValueBRL) {
+        ruleDescription += `Venda mínima: R$${strategy.minSellValueBRL}.`;
+      }
+      return {
+        type,
+        name: strategy.name,
+        description: strategy.description,
+        rule: {
+          levels: strategy.levels,
+          trailingStop: strategy.trailingStop,
+          minSellValueBRL: strategy.minSellValueBRL
+        },
+        ruleDescription
+      };
+    });
+    return reply.send(strategies);
+  } catch (err) {
+    return reply.status(500).send({ error: err.message });
+  }
+}
+
+
 module.exports = {
   jobRunHandler,
   jobConfigHandler,
@@ -1421,12 +1433,11 @@ module.exports = {
   jobStatusDetailedHandler,
   jobUpdateIntervalHandler,
   jobStrategyStatusHandler,
-  getSaleStrategyConfigHandler,
-  updateSaleStrategyConfigHandler,
   getProfitSummaryHandler,
   getMonitoringStatusHandler,
   getPriceStatsHandler,
   resetPriceTrackingHandler,
   jobStatusHandler,
   jobToggleHandler,
+  getAllStrategiesHandler,
 }; 

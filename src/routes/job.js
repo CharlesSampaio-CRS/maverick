@@ -248,22 +248,6 @@ const jobRoutes = async (fastify, opts) => {
   }, jobStatusDetailedHandler);
 
   // Rotas para configuração da estratégia de venda
-  fastify.get('/job/sale-strategy', {
-    schema: {
-      tags: ['Strategies'],
-      summary: 'Get sale strategy configuration',
-      response: { 200: saleStrategyConfigSchema }
-    }
-  }, require('../controllers/jobController').getSaleStrategyConfigHandler);
-
-  fastify.put('/job/sale-strategy', {
-    schema: {
-      tags: ['Strategies'],
-      summary: 'Update sale strategy configuration',
-      body: saleStrategyConfigUpdateSchema,
-      response: { 200: saleStrategyConfigSchema }
-    }
-  }, require('../controllers/jobController').updateSaleStrategyConfigHandler);
 
   fastify.get('/job/profit-summary', {
     schema: {
@@ -273,65 +257,46 @@ const jobRoutes = async (fastify, opts) => {
     }
   }, require('../controllers/jobController').getProfitSummaryHandler);
 
-  fastify.get('/job/strategy-status', {
+  // Remove the /job/strategy-status endpoint
+  // fastify.get('/job/strategy-status', { ... }, jobStrategyStatusHandler);
+
+  // Add new endpoint for all strategies with description and rule
+  fastify.get('/job/strategies', {
     schema: {
       tags: ['Strategies'],
-      summary: 'Get status of active sale strategies',
+      summary: 'Get all sale strategies with description and rule',
       response: {
         200: {
-          type: 'object',
-          properties: {
-            activeStrategies: { type: 'number' },
-            strategies: {
-              type: 'array',
-              items: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              type: { type: 'string' },
+              name: { type: 'string' },
+              description: { type: 'string' },
+              rule: {
                 type: 'object',
                 properties: {
-                  symbol: { type: 'string' },
-                  strategy: { type: 'string' },
-                  strategyName: { type: 'string' },
-                  initialAmount: { type: 'number' },
-                  remainingAmount: { type: 'number' },
-                  firstSellPrice: { type: 'number' },
-                  currentHighestPrice: { type: 'number' },
-                  trailingStop: { type: 'number' },
-                  profitMetrics: {
-                    type: 'object',
-                    properties: {
-                      avgSellPrice: { type: 'number' },
-                      profitPercent: { type: 'string' },
-                      highestPrice: { type: 'number' },
-                      maxProfitPercent: { type: 'string' }
-                    }
-                  },
-                  remainingTargets: {
+                  levels: {
                     type: 'array',
                     items: {
                       type: 'object',
                       properties: {
                         percentage: { type: 'number' },
-                        price: { type: 'number' },
-                        priceIncrease: { type: 'string' }
+                        priceIncrease: { type: 'number' }
                       }
                     }
                   },
-                  lastUpdate: { type: 'string', format: 'date-time' },
-                  age: { type: 'string' }
+                  trailingStop: { type: 'number' },
+                  minSellValueBRL: { type: 'number' }
                 }
-              }
-            },
-            summary: {
-              type: 'object',
-              properties: {
-                totalActive: { type: 'number' },
-                avgProfitPotential: { type: 'string' }
               }
             }
           }
         }
       }
     }
-  }, jobStrategyStatusHandler);
+  }, require('../controllers/jobController').getAllStrategiesHandler);
 
   // Monitoring endpoints
   fastify.get('/job/monitoring-status', {
