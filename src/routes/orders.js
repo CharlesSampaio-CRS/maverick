@@ -37,10 +37,9 @@ const ordersRoutes = async (fastify, opts) => {
       summary: 'Create market sell order',
       body: {
         type: 'object',
-        required: ['symbol', 'amount'],
+        required: ['symbol'],
         properties: {
-          symbol: { type: 'string' },
-          amount: { type: 'number' }
+          symbol: { type: 'string' }
         }
       },
       response: {
