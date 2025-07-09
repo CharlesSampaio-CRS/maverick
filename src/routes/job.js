@@ -8,7 +8,9 @@ const {
   jobStatusDetailedHandler,
   jobUpdateIntervalHandler,
   jobStrategyStatusHandler,
-  getMonitoringStatusHandler
+  getMonitoringStatusHandler,
+  getPriceStatsHandler,
+  resetPriceTrackingHandler
 } = require('../controllers/jobController');
 
 const jobConfigSchema = {
@@ -25,6 +27,10 @@ const jobConfigSchema = {
       default: 'security'
     },
     monitoringEnabled: { type: 'boolean' },
+    minBuyPrice: { type: 'number' },
+    maxSellPrice: { type: 'number' },
+    priceTrackingEnabled: { type: 'boolean' },
+    minProfitPercent: { type: 'number' },
     createdAt: { type: 'string', format: 'date-time' },
     updatedAt: { type: 'string', format: 'date-time' },
     __v: { type: 'number' }
@@ -354,6 +360,56 @@ const jobRoutes = async (fastify, opts) => {
       }
     }
   }, getMonitoringStatusHandler);
+
+  fastify.get('/job/price-stats/:symbol', {
+    schema: {
+      tags: ['Monitoring'],
+      summary: 'Get price statistics for a symbol',
+      params: {
+        type: 'object',
+        properties: {
+          symbol: { type: 'string' }
+        }
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            symbol: { type: 'string' },
+            currentPrice: { type: 'number' },
+            highestPrice: { type: 'number' },
+            lowestPrice: { type: 'number' },
+            averagePrice: { type: 'number' },
+            priceChange: { type: 'number' },
+            priceChangePercent: { type: 'string' },
+            lastUpdate: { type: 'string', format: 'date-time' }
+          }
+        }
+      }
+    }
+  }, getPriceStatsHandler);
+
+  fastify.post('/job/reset-price-tracking/:symbol', {
+    schema: {
+      tags: ['Monitoring'],
+      summary: 'Reset price tracking for a symbol',
+      params: {
+        type: 'object',
+        properties: {
+          symbol: { type: 'string' }
+        }
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' }
+          }
+        }
+      }
+    }
+  }, resetPriceTrackingHandler);
 };
 
 module.exports = jobRoutes; 

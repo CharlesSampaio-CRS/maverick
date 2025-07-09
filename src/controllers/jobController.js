@@ -3,6 +3,7 @@ const jobService = require('../services/jobService');
 const tickerService = require('../services/tickerService');
 const balanceService = require('../services/balanceService');
 const ordersService = require('../services/ordersService');
+const priceTrackingService = require('../services/priceTrackingService');
 const Operation = require('../models/Operation');
 const cron = require('node-cron');
 
@@ -649,6 +650,27 @@ async function jobRunHandler(request, reply) {
 
     // 4. Execute order
     if (action === 'buy') {
+      const currentPrice = parseFloat(ticker.lastPrice);
+      
+      // Verificar se o preço atual é adequado para compra
+      const priceCheck = await priceTrackingService.shouldBuyAtPrice(symbol, currentPrice);
+      if (!priceCheck.shouldBuy) {
+        const reason = `price check failed: ${priceCheck.reason}`;
+        console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${currentPrice} | 24h change: ${ticker.changePercent24h}% | Reason: ${reason} | Date: ${nowStr}`);
+        logJobEvent('buy_skipped', symbol, { 
+          reason, 
+          currentPrice,
+          priceCheck,
+          change24h: ticker.changePercent24h,
+          timestamp: nowStr 
+        });
+        return reply.send({ 
+          success: false, 
+          message: `Buy skipped: ${priceCheck.reason}`,
+          priceCheck
+        });
+      }
+      
       // Get BRL balance
       const balance = await balanceService.getBalance('BRL');
       const max = parseFloat(balance.available);
@@ -670,6 +692,11 @@ async function jobRunHandler(request, reply) {
       
       const op = await ordersService.createBuyOrder(symbol, amount);
       
+      // Atualizar tracking de preços após compra bem-sucedida
+      if (op.status === 'success') {
+        await priceTrackingService.updatePriceTracking(symbol);
+      }
+      
       // Log buy execution
       logJobEvent('buy_executed', symbol, { 
         amount, 
@@ -677,6 +704,7 @@ async function jobRunHandler(request, reply) {
         change24h: ticker.changePercent24h,
         orderStatus: op.status,
         orderId: op.id,
+        priceCheck,
         timestamp: nowStr 
       });
       
@@ -686,7 +714,7 @@ async function jobRunHandler(request, reply) {
       }
       
       console.log(`[JOB] Executed | Symbol: ${symbol} | Action: BUY | Value: R$${amount} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Strategy: ${symbolConfig.sellStrategy} | BuyThreshold: ${symbolConfig.buyThreshold} | SellThreshold: ${symbolConfig.sellThreshold} | Date: ${nowStr}`);
-      return reply.send({ success: op.status === 'success', message: 'Buy order executed', op });
+      return reply.send({ success: op.status === 'success', message: 'Buy order executed', op, priceCheck });
     } else {
       // Get base currency balance
       const baseCurrency = symbol.split('_')[0];
@@ -716,6 +744,26 @@ async function jobRunHandler(request, reply) {
       let tracker = partialSales.get(symbol);
       
       if (!tracker) {
+        // Verificar se o preço atual é adequado para venda
+        const priceCheck = await priceTrackingService.shouldSellAtPrice(symbol, currentPrice);
+        if (!priceCheck.shouldSell) {
+          const reason = `price check failed: ${priceCheck.reason}`;
+          console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${currentPrice} | 24h change: ${ticker.changePercent24h}% | Reason: ${reason} | Date: ${nowStr}`);
+          logJobEvent('sell_skipped', symbol, { 
+            reason, 
+            currentPrice,
+            priceCheck,
+            change24h: ticker.changePercent24h,
+            strategy: symbolConfig.sellStrategy,
+            timestamp: nowStr 
+          });
+          return reply.send({ 
+            success: false, 
+            message: `Sell skipped: ${priceCheck.reason}`,
+            priceCheck
+          });
+        }
+        
         // Primeira venda: vender conforme a estratégia configurada
         const firstSellAmount = Math.floor(amount * strategyConfig.levels[0].percentage);
         if (firstSellAmount <= 0) {
@@ -729,6 +777,9 @@ async function jobRunHandler(request, reply) {
           tracker = new PartialSaleTracker(symbol, amount, currentPrice, strategyConfig);
           partialSales.set(symbol, tracker);
           
+          // Atualizar tracking de preços após venda bem-sucedida
+          await priceTrackingService.updatePriceTracking(symbol);
+          
           // Log first sell execution
           logJobEvent('sell_first_executed', symbol, { 
             amount: firstSellAmount, 
@@ -739,6 +790,7 @@ async function jobRunHandler(request, reply) {
             orderId: op.id,
             strategy: symbolConfig.sellStrategy,
             strategyName: strategyConfig.name,
+            priceCheck,
             timestamp: nowStr 
           });
           
@@ -757,6 +809,7 @@ async function jobRunHandler(request, reply) {
             success: true, 
             message: `Sell order (${(strategyConfig.levels[0].percentage * 100).toFixed(0)}%) executed - ${strategyConfig.name} strategy activated`, 
             op,
+            priceCheck,
             strategy: {
               type: symbolConfig.sellStrategy,
               name: strategyConfig.name,
@@ -1292,32 +1345,63 @@ async function getProfitSummaryHandler(request, reply) {
 // Endpoint to get monitoring status
 async function getMonitoringStatusHandler(request, reply) {
   try {
-    const buyMonitoringList = [];
-    for (const [symbol, monitoring] of buyMonitoringState.entries()) {
-      buyMonitoringList.push(monitoring.getStatus());
-    }
+    const buyMonitoring = Array.from(buyMonitoringState.entries()).map(([symbol, monitoring]) => ({
+      symbol,
+      ...monitoring.getStatus()
+    }));
     
-    const sellMonitoringList = [];
-    for (const [symbol, monitoring] of sellMonitoringState.entries()) {
-      sellMonitoringList.push(monitoring.getStatus());
-    }
+    const sellMonitoring = Array.from(sellMonitoringState.entries()).map(([symbol, monitoring]) => ({
+      symbol,
+      ...monitoring.getStatus()
+    }));
     
     return reply.send({
-      activeBuyMonitoring: buyMonitoringList.length,
-      activeSellMonitoring: sellMonitoringList.length,
-      buyMonitoring: buyMonitoringList,
-      sellMonitoring: sellMonitoringList,
-      defaultMonitoringConfig,
+      buyMonitoring,
+      sellMonitoring,
       summary: {
-        totalActive: buyMonitoringList.length + sellMonitoringList.length,
-        avgBuyTimeElapsed: buyMonitoringList.length > 0 ? 
-          (buyMonitoringList.reduce((sum, m) => sum + parseFloat(m.timeElapsed), 0) / buyMonitoringList.length).toFixed(1) + 'min' : '0min',
-        avgSellTimeElapsed: sellMonitoringList.length > 0 ? 
-          (sellMonitoringList.reduce((sum, m) => sum + parseFloat(m.timeElapsed), 0) / sellMonitoringList.length).toFixed(1) + 'min' : '0min'
+        activeBuyMonitoring: buyMonitoring.length,
+        activeSellMonitoring: sellMonitoring.length
       }
     });
   } catch (err) {
     logJobError('system', err, { context: 'getMonitoringStatusHandler' });
+    return reply.status(500).send({ error: err.message });
+  }
+}
+
+async function getPriceStatsHandler(request, reply) {
+  try {
+    const { symbol } = request.params;
+    const stats = await priceTrackingService.getPriceStats(symbol);
+    
+    if (!stats.success) {
+      return reply.status(404).send({ error: stats.reason || 'Symbol not found' });
+    }
+    
+    return reply.send(stats);
+  } catch (err) {
+    logJobError(request.params.symbol, err, { context: 'getPriceStatsHandler' });
+    return reply.status(500).send({ error: err.message });
+  }
+}
+
+async function resetPriceTrackingHandler(request, reply) {
+  try {
+    const { symbol } = request.params;
+    const result = await priceTrackingService.resetPriceTracking(symbol);
+    
+    if (!result.success) {
+      return reply.status(404).send({ error: result.reason || 'Symbol not found' });
+    }
+    
+    // Log reset event
+    logJobEvent('price_tracking_reset', symbol, {
+      timestamp: new Date().toISOString()
+    });
+    
+    return reply.send(result);
+  } catch (err) {
+    logJobError(request.params.symbol, err, { context: 'resetPriceTrackingHandler' });
     return reply.status(500).send({ error: err.message });
   }
 }
@@ -1338,4 +1422,6 @@ module.exports = {
   updateSaleStrategyConfigHandler,
   getProfitSummaryHandler,
   getMonitoringStatusHandler,
+  getPriceStatsHandler,
+  resetPriceTrackingHandler,
 }; 
