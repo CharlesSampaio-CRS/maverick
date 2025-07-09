@@ -33,12 +33,28 @@ async function buyHandler(request, reply) {
     return reply.status(400).send({ error: 'Symbol is required' });
   }
   try {
+    // Buscar config do símbolo para saber a estratégia
+    const config = await JobConfig.findOne({ symbol });
+    const strategy = config ? config.sellStrategy : undefined;
     const result = await ordersService.createBuyOrder(symbol);
     // Atualiza o tracking de preço após compra bem-sucedida
     if (result.status === 'success') {
       await priceTrackingService.updatePriceTracking(symbol);
     }
-    return reply.send(result);
+    // Salvar/atualizar Operation com strategy, amount e price
+    if (result._id) {
+      const Operation = require('../models/Operation');
+      await Operation.updateOne(
+        { _id: result._id },
+        { $set: { strategy: strategy, amount: result.amount, price: result.price } }
+      );
+    }
+    return reply.send({
+      ...result,
+      strategy: strategy,
+      amount: result.amount,
+      price: result.price
+    });
   } catch (err) {
     return reply.status(500).send({ error: 'Error creating order', details: err.message });
   }
@@ -87,9 +103,18 @@ async function sellHandler(request, reply) {
     if (result.status === 'success') {
       await priceTrackingService.updatePriceTracking(symbol);
     }
+    // Salvar/atualizar Operation com strategy, amount e price
+    if (result._id) {
+      await Operation.updateOne(
+        { _id: result._id },
+        { $set: { strategy: strategy, amount: result.amount, price: result.price } }
+      );
+    }
     return reply.send({
       ...result,
       strategy: strategy,
+      amount: result.amount,
+      price: result.price,
       level: levelIdx + 1,
       percentage: level.percentage,
       amountUsed: amount
