@@ -257,8 +257,23 @@ const jobRoutes = async (fastify, opts) => {
             activeSellMonitoring: { type: 'number' },
             buyMonitoring: { type: 'array' },
             sellMonitoring: { type: 'array' },
-            buyMonitoringConfig: { type: 'object' },
-            summary: { type: 'object' }
+            buyMonitoringConfig: { 
+              type: 'object',
+              properties: {
+                enabled: { type: 'boolean' },
+                monitorMinutes: { type: 'number' },
+                buyOnRisePercent: { type: 'number' }
+              }
+            },
+            sellStrategiesMonitoring: { type: 'object' },
+            summary: { 
+              type: 'object',
+              properties: {
+                totalActive: { type: 'number' },
+                avgBuyTimeElapsed: { type: 'string' },
+                avgSellTimeElapsed: { type: 'string' }
+              }
+            }
           }
         }
       }

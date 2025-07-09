@@ -1317,12 +1317,34 @@ async function getMonitoringStatusHandler(request, reply) {
       sellMonitoringList.push(monitoring.getStatus());
     }
     
+    // Ensure buyMonitoringConfig is properly structured
+    const currentBuyConfig = {
+      enabled: buyMonitoringConfig.enabled || false,
+      monitorMinutes: buyMonitoringConfig.monitorMinutes || 60,
+      buyOnRisePercent: buyMonitoringConfig.buyOnRisePercent || 2.5
+    };
+    
+    // Get current sell strategies with monitoring config
+    const currentSellStrategies = {};
+    for (const [strategyType, strategy] of Object.entries(sellStrategies)) {
+      currentSellStrategies[strategyType] = {
+        name: strategy.name,
+        description: strategy.description,
+        monitoring: {
+          enabled: strategy.monitoring?.enabled || false,
+          monitorMinutes: strategy.monitoring?.monitorMinutes || 60,
+          sellOnDropPercent: strategy.monitoring?.sellOnDropPercent || 2.5
+        }
+      };
+    }
+    
     return reply.send({
       activeBuyMonitoring: buyMonitoringList.length,
       activeSellMonitoring: sellMonitoringList.length,
       buyMonitoring: buyMonitoringList,
       sellMonitoring: sellMonitoringList,
-      buyMonitoringConfig,
+      buyMonitoringConfig: currentBuyConfig,
+      sellStrategiesMonitoring: currentSellStrategies,
       summary: {
         totalActive: buyMonitoringList.length + sellMonitoringList.length,
         avgBuyTimeElapsed: buyMonitoringList.length > 0 ? 
