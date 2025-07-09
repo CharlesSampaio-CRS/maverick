@@ -1385,9 +1385,33 @@ async function resetPriceTrackingHandler(request, reply) {
   }
 }
 
+// Handler for /job/status: returns array of { symbol, status }
+async function jobStatusHandler(request, reply) {
+  try {
+    const config = await jobService.status();
+    // config.symbols is expected to be an array of symbol configs
+    const result = config.symbols.map(s => ({
+      symbol: s.symbol,
+      status: !!s.enabled
+    }));
+    return reply.send(result);
+  } catch (err) {
+    return reply.status(500).send({ error: err.message });
+  }
+}
+
+// Handler for /job/toggle/:symbol: toggles enabled status for a symbol
+async function jobToggleHandler(request, reply) {
+  try {
+    const { symbol } = request.params;
+    const config = await jobService.toggleSymbol(symbol);
+    return reply.send(config);
+  } catch (err) {
+    return reply.status(500).send({ error: err.message });
+  }
+}
+
 module.exports = {
-  jobStatusHandler,
-  jobToggleHandler,
   jobRunHandler,
   jobConfigHandler,
   jobAddSymbolHandler,
@@ -1403,4 +1427,6 @@ module.exports = {
   getMonitoringStatusHandler,
   getPriceStatsHandler,
   resetPriceTrackingHandler,
+  jobStatusHandler,
+  jobToggleHandler,
 }; 
