@@ -40,7 +40,7 @@ async function buyHandler(request, reply) {
       // Atualizar lastBuyPrice no JobConfig
       await JobConfig.updateOne(
         { symbol },
-        { $set: { lastBuyPrice: result.price, updatedAt: new Date() } }
+        { $set: { lastBuyPrice: Number(result.price.toFixed(8)), updatedAt: new Date() } }
       );
       // Resetar tracker de venda/compra para liberar novas operações
       try {
@@ -108,7 +108,7 @@ async function sellHandler(request, reply) {
       // Atualizar lastSellPrice no JobConfig
       await JobConfig.updateOne(
         { symbol },
-        { $set: { lastSellPrice: result.price, updatedAt: new Date() } }
+        { $set: { lastSellPrice: Number(result.price.toFixed(8)), updatedAt: new Date() } }
       );
       // Resetar tracker de venda/compra para liberar novas operações
       try {

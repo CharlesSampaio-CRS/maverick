@@ -30,32 +30,10 @@ class PriceTrackingService {
       let updated = false;
 
       // Atualizar preço mínimo de compra
-      if (lastSell && lastSell.price) {
-        // Usa buyThreshold (ex: -8 para -8%)
-        const buyThreshold = typeof config.buyThreshold === 'number' ? config.buyThreshold : -2;
-        const lastBuyPrice = lastSell.price * (1 + (buyThreshold / 100));
-        if (!config.lastBuyPrice || lastBuyPrice < config.lastBuyPrice) {
-          config.lastBuyPrice = lastBuyPrice;
-          updated = true;
-          console.log(`[PRICE_TRACKING] Updated lastBuyPrice for ${symbol}: ${lastBuyPrice} (based on last sell: ${lastSell.price}, buyThreshold: ${buyThreshold}%)`);
-        }
-        // Salva o valor da última venda
-        // (removido lastPriceSell)
-      }
+      // (Removido: não atualizar lastBuyPrice aqui)
 
       // Atualizar preço máximo de venda
-      if (lastBuy && lastBuy.price) {
-        // Usa sellThreshold (ex: 10 para +10%)
-        const sellThreshold = typeof config.sellThreshold === 'number' ? config.sellThreshold : 2;
-        const lastSellPrice = lastBuy.price * (1 + (sellThreshold / 100));
-        if (!config.lastSellPrice || lastSellPrice > config.lastSellPrice) {
-          config.lastSellPrice = lastSellPrice;
-          updated = true;
-          console.log(`[PRICE_TRACKING] Updated lastSellPrice for ${symbol}: ${lastSellPrice} (based on last buy: ${lastBuy.price}, sellThreshold: ${sellThreshold}%)`);
-        }
-        // Salva o valor da última compra
-        // (removido lastPriceBuy)
-      }
+      // (Removido: não atualizar lastSellPrice aqui)
 
       if (updated) {
         config.updatedAt = new Date();

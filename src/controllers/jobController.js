@@ -592,6 +592,13 @@ async function jobRunHandler(request, reply) {
     // 4. Execute order
     if (action === 'buy') {
       const currentPrice = parseFloat(ticker.lastPrice);
+      // NOVO: Só permite comprar se sellThreshold for negativo
+      if (typeof symbolConfig.sellThreshold !== 'number' || symbolConfig.sellThreshold >= 0) {
+        return reply.send({
+          success: false,
+          message: `Buy not allowed: sellThreshold must be negative (current: ${symbolConfig.sellThreshold})`
+        });
+      }
       // Só permite comprar se o preço atual for menor que lastSellPrice + sellThreshold%
       if (symbolConfig.lastSellPrice) {
         const buyLimit = symbolConfig.lastSellPrice * (1 + (symbolConfig.sellThreshold / 100));
@@ -648,7 +655,7 @@ async function jobRunHandler(request, reply) {
         // Atualizar lastBuyPrice no JobConfig
         await JobConfig.updateOne(
           { symbol },
-          { $set: { lastBuyPrice: currentPrice, updatedAt: new Date() } }
+          { $set: { lastBuyPrice: Number(currentPrice.toFixed(8)), updatedAt: new Date() } }
         );
       }
       
@@ -692,6 +699,24 @@ async function jobRunHandler(request, reply) {
 
       const currentPrice = parseFloat(ticker.lastPrice);
       
+      // NOVO: Só permite vender se buyThreshold for positivo
+      if (typeof symbolConfig.buyThreshold !== 'number' || symbolConfig.buyThreshold <= 0) {
+        return reply.send({
+          success: false,
+          message: `Sell not allowed: buyThreshold must be positive (current: ${symbolConfig.buyThreshold})`
+        });
+      }
+      // Só permite vender se o preço atual for maior que lastBuyPrice + buyThreshold%
+      if (symbolConfig.lastBuyPrice) {
+        const sellLimit = symbolConfig.lastBuyPrice * (1 + (symbolConfig.buyThreshold / 100));
+        if (currentPrice <= sellLimit) {
+          return reply.send({
+            success: false,
+            message: `Sell skipped: current price (${currentPrice}) is not greater than lastBuyPrice (${symbolConfig.lastBuyPrice}) + buyThreshold (${symbolConfig.buyThreshold}%) = ${sellLimit}`
+          });
+        }
+      }
+
       // Obter configuração da estratégia para este símbolo
       const strategyConfig = getStrategyConfig(symbolConfig);
       
@@ -736,7 +761,7 @@ async function jobRunHandler(request, reply) {
           // Atualizar lastSellPrice no JobConfig
           await JobConfig.updateOne(
             { symbol },
-            { $set: { lastSellPrice: currentPrice, updatedAt: new Date() } }
+            { $set: { lastSellPrice: Number(currentPrice.toFixed(8)), updatedAt: new Date() } }
           );
           // Log first sell execution
           logJobEvent('sell_first_executed', symbol, { 
