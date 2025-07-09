@@ -41,19 +41,22 @@ async function buyHandler(request, reply) {
     if (result.status === 'success') {
       await priceTrackingService.updatePriceTracking(symbol);
     }
-    // Salvar/atualizar Operation com strategy, amount e price
+    // Valor em BRL para compra é o próprio amount
+    const valueBRL = result.amount ? Number(result.amount) : null;
+    // Salvar/atualizar Operation com strategy, amount, price e valueBRL
     if (result._id) {
       const Operation = require('../models/Operation');
       await Operation.updateOne(
         { _id: result._id },
-        { $set: { strategy: strategy, amount: result.amount, price: result.price } }
+        { $set: { strategy: strategy, amount: result.amount, price: result.price, valueBRL } }
       );
     }
     return reply.send({
       ...result,
       strategy: strategy,
       amount: result.amount,
-      price: result.price
+      price: result.price,
+      valueBRL
     });
   } catch (err) {
     return reply.status(500).send({ error: 'Error creating order', details: err.message });
@@ -103,11 +106,13 @@ async function sellHandler(request, reply) {
     if (result.status === 'success') {
       await priceTrackingService.updatePriceTracking(symbol);
     }
-    // Salvar/atualizar Operation com strategy, amount e price
+    // Valor em BRL para venda é amount * price
+    const valueBRL = (result.amount && result.price) ? Number(result.amount) * Number(result.price) : null;
+    // Salvar/atualizar Operation com strategy, amount, price e valueBRL
     if (result._id) {
       await Operation.updateOne(
         { _id: result._id },
-        { $set: { strategy: strategy, amount: result.amount, price: result.price } }
+        { $set: { strategy: strategy, amount: result.amount, price: result.price, valueBRL } }
       );
     }
     return reply.send({
@@ -115,6 +120,7 @@ async function sellHandler(request, reply) {
       strategy: strategy,
       amount: result.amount,
       price: result.price,
+      valueBRL,
       level: levelIdx + 1,
       percentage: level.percentage,
       amountUsed: amount

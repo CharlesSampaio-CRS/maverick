@@ -1,5 +1,5 @@
 const Operation = require('../models/Operation');
-const JobConfig = require('../models/JobConfig');
+const { JobConfig } = require('../models/JobConfig');
 
 class PriceTrackingService {
   /**
