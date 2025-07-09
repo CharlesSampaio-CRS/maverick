@@ -6,7 +6,10 @@ const {
   jobRemoveSymbolHandler,
   jobGetSymbolHandler,
   jobStatusDetailedHandler,
-  jobUpdateIntervalHandler
+  jobUpdateIntervalHandler,
+  getMonitoringStatusHandler,
+  updateBuyMonitoringConfigHandler,
+  updateSellMonitoringConfigHandler
 } = require('../controllers/jobController');
 
 const jobConfigSchema = {
@@ -241,6 +244,58 @@ const jobRoutes = async (fastify, opts) => {
       response: { 200: profitSummarySchema }
     }
   }, require('../controllers/jobController').getProfitSummaryHandler);
+
+  // Monitoring endpoints
+  fastify.get('/job/monitoring-status', {
+    schema: {
+      summary: 'Get monitoring status for all symbols',
+      response: { 
+        200: {
+          type: 'object',
+          properties: {
+            activeBuyMonitoring: { type: 'number' },
+            activeSellMonitoring: { type: 'number' },
+            buyMonitoring: { type: 'array' },
+            sellMonitoring: { type: 'array' },
+            buyMonitoringConfig: { type: 'object' },
+            summary: { type: 'object' }
+          }
+        }
+      }
+    }
+  }, getMonitoringStatusHandler);
+
+  fastify.post('/job/buy-monitoring-config', {
+    schema: {
+      summary: 'Update buy monitoring configuration',
+      body: {
+        type: 'object',
+        properties: {
+          enabled: { type: 'boolean' },
+          monitorMinutes: { type: 'number', minimum: 5, maximum: 1440 },
+          buyOnRisePercent: { type: 'number', minimum: 0.1, maximum: 20 }
+        }
+      },
+      response: { 200: { type: 'object' } }
+    }
+  }, updateBuyMonitoringConfigHandler);
+
+  fastify.post('/job/sell-monitoring-config', {
+    schema: {
+      summary: 'Update sell monitoring configuration for a strategy',
+      body: {
+        type: 'object',
+        properties: {
+          strategyType: { type: 'string', enum: ['security', 'basic', 'aggressive'] },
+          enabled: { type: 'boolean' },
+          monitorMinutes: { type: 'number', minimum: 5, maximum: 1440 },
+          sellOnDropPercent: { type: 'number', minimum: 0.1, maximum: 20 }
+        },
+        required: ['strategyType']
+      },
+      response: { 200: { type: 'object' } }
+    }
+  }, updateSellMonitoringConfigHandler);
 };
 
 module.exports = jobRoutes; 
