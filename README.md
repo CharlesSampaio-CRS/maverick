@@ -1,115 +1,115 @@
 # NovaDAX Bot API
 
-API Node.js para automação de ordens na NovaDAX, com Fastify, MongoDB e Swagger.
+Node.js API for order automation on NovaDAX, using Fastify, MongoDB, and Swagger.
 
-## Pré-requisitos
+## Prerequisites
 - Node.js 18+
 - MongoDB
 
-## Instalação
+## Installation
 ```bash
 git clone ...
 cd ordersautomstic
 npm install
-cp .env.example .env # Edite com suas chaves
+cp .env.example .env # Edit with your keys
 ```
 
-## Configuração
-Edite o arquivo `.env` com suas chaves da NovaDAX e string do MongoDB.
+## Configuration
+Edit the `.env` file with your NovaDAX keys and MongoDB connection string.
 
-## Rodando o projeto
+## Running the project
 ```bash
 npm start
 ```
 
-Acesse a documentação Swagger em: [http://localhost:3000/docs](http://localhost:3000/docs)
+Access the Swagger documentation at: [http://localhost:3000/docs](http://localhost:3000/docs)
 
-## Endpoints principais
+## Main Endpoints
 
-- **POST /buy** — Criar ordem de compra
-- **POST /sell** — Criar ordem de venda
-- **GET /balance** — Listar saldos
-- **GET /balance/:currency** — Saldo de uma moeda
-- **GET /ticker/:symbol** — Preço e variação
-- **GET /operations/history** — Histórico de operações
+- **POST /buy** — Create buy order
+- **POST /sell** — Create sell order
+- **GET /balance** — List balances
+- **GET /balance/:currency** — Balance for a specific currency
+- **GET /ticker/:symbol** — Price and variation
+- **GET /operations/history** — Operations history
 
-## Exemplo de requisição de compra
+## Example buy request
 ```bash
 curl -X POST http://localhost:3000/buy -H 'Content-Type: application/json' -d '{"symbol":"MOG_BRL","amount":100}'
 ```
 
-## Funcionalidades
+## Features
 
-### 📊 Endpoints de Mercado
-- `GET /ticker/:symbol` - Obter dados de preço e variação de um símbolo
-- `GET /balance` - Obter saldo de todas as moedas
-- `GET /balance/:currency` - Obter saldo de uma moeda específica
+### 📊 Market Endpoints
+- `GET /ticker/:symbol` - Get price and variation data for a symbol
+- `GET /balance` - Get all currency balances
+- `GET /balance/:currency` - Get balance for a specific currency
 
-### 🛒 Endpoints de Trading
-- `POST /buy` - Criar ordem de compra a mercado
-- `POST /sell` - Criar ordem de venda a mercado
+### 🛒 Trading Endpoints
+- `POST /buy` - Create a market buy order
+- `POST /sell` - Create a market sell order
 
-### 🤖 Endpoints do Job de Monitoramento
-- `GET /job/status` - Verificar status do job de monitoramento
-- `POST /job/toggle` - Habilitar/desabilitar o job
-- `POST /job/run` - Executar o job manualmente
-- `POST /job/config` - Atualizar configuração do job
+### 🤖 Monitoring Job Endpoints
+- `GET /job/status` - Check monitoring job status
+- `POST /job/toggle` - Enable/disable the job
+- `POST /job/run` - Run the job manually
+- `POST /job/config` - Update job configuration
 
-### 📈 Endpoints de Gerenciamento de Símbolos
-- `GET /job/symbols/:symbol` - Obter configuração de um símbolo específico
-- `POST /job/symbols` - Adicionar novo símbolo ao monitoramento
-- `PUT /job/symbols/:symbol` - Atualizar configuração de um símbolo
-- `DELETE /job/symbols/:symbol` - Remover símbolo do monitoramento
+### 📈 Symbol Management Endpoints
+- `GET /job/symbols/:symbol` - Get configuration for a specific symbol
+- `POST /job/symbols` - Add a new symbol to monitoring
+- `PUT /job/symbols/:symbol` - Update configuration for a symbol
+- `DELETE /job/symbols/:symbol` - Remove symbol from monitoring
 
-## Job de Monitoramento Automático
+## Automatic Monitoring Job
 
-O sistema inclui um job que executa a cada 3 minutos e monitora múltiplos símbolos simultaneamente:
+The system includes a job that runs every 3 minutes and monitors multiple symbols simultaneously:
 
-1. **Monitora** a variação de 24h de cada símbolo configurado
-2. **Verifica** se a queda é maior que o threshold de compra OU se a alta é maior que o threshold de venda
-3. **Cria** ordens de compra a mercado (usando BRL) ou venda a mercado (usando a moeda base)
+1. **Monitors** the 24h variation of each configured symbol
+2. **Checks** if the drop is greater than the buy threshold OR if the rise is greater than the sell threshold
+3. **Creates** market buy orders (using BRL) or market sell orders (using the base currency)
 
-### Configuração Padrão
+### Default Configuration
 ```javascript
 {
-  checkInterval: '*/3 * * * *', // A cada 3 minutos
+  checkInterval: '*/3 * * * *', // Every 3 minutes
   enabled: true,
   symbols: [
     {
       symbol: 'MOG_BRL',
-      buyThreshold: -10,  // Compra em queda de 10%
-      sellThreshold: 10,  // Vende em alta de 10%
+      buyThreshold: -10,  // Buy on a 10% drop
+      sellThreshold: 10,  // Sell on a 10% rise
       enabled: true
     },
     {
       symbol: 'BTC_BRL',
-      buyThreshold: -15,  // Compra em queda de 15%
-      sellThreshold: 15,  // Vende em alta de 15%
+      buyThreshold: -15,  // Buy on a 15% drop
+      sellThreshold: 15,  // Sell on a 15% rise
       enabled: true
     },
     {
       symbol: 'ETH_BRL',
-      buyThreshold: -12,  // Compra em queda de 12%
-      sellThreshold: 12,  // Vende em alta de 12%
+      buyThreshold: -12,  // Buy on a 12% drop
+      sellThreshold: 12,  // Sell on a 12% rise
       enabled: true
     }
   ]
 }
 ```
 
-### Exemplos de Uso
+### Usage Examples
 
-#### Verificar status do job:
+#### Check job status:
 ```bash
 curl http://localhost:3000/job/status
 ```
 
-#### Executar job manualmente:
+#### Run job manually:
 ```bash
 curl -X POST http://localhost:3000/job/run
 ```
 
-#### Comprar MOG_BRL a mercado:
+#### Buy MOG_BRL at market:
 ```bash
 curl -X POST http://localhost:3000/buy \
   -H "Content-Type: application/json" \
@@ -119,7 +119,7 @@ curl -X POST http://localhost:3000/buy \
   }'
 ```
 
-#### Vender MOG a mercado:
+#### Sell MOG at market:
 ```bash
 curl -X POST http://localhost:3000/sell \
   -H "Content-Type: application/json" \
@@ -129,7 +129,7 @@ curl -X POST http://localhost:3000/sell \
   }'
 ```
 
-#### Adicionar novo símbolo:
+#### Add new symbol:
 ```bash
 curl -X POST http://localhost:3000/job/symbols \
   -H "Content-Type: application/json" \
@@ -141,7 +141,7 @@ curl -X POST http://localhost:3000/job/symbols \
   }'
 ```
 
-#### Atualizar configuração de um símbolo:
+#### Update symbol configuration:
 ```bash
 curl -X PUT http://localhost:3000/job/symbols/BTC_BRL \
   -H "Content-Type: application/json" \
@@ -151,23 +151,23 @@ curl -X PUT http://localhost:3000/job/symbols/BTC_BRL \
   }'
 ```
 
-#### Atualizar intervalo do job em tempo real:
+#### Update job interval in real time:
 ```bash
-# Alterar para executar a cada 5 minutos
+# Change to run every 5 minutes
 curl -X POST http://localhost:3000/job/interval \
   -H "Content-Type: application/json" \
   -d '{
     "checkInterval": "*/5 * * * *"
   }'
 
-# Alterar para executar a cada hora
+# Change to run every hour
 curl -X POST http://localhost:3000/job/interval \
   -H "Content-Type: application/json" \
   -d '{
     "checkInterval": "0 * * * *"
   }'
 
-# Alterar para executar a cada 2 horas
+# Change to run every 2 hours
 curl -X POST http://localhost:3000/job/interval \
   -H "Content-Type: application/json" \
   -d '{
@@ -175,7 +175,7 @@ curl -X POST http://localhost:3000/job/interval \
   }'
 ```
 
-#### Atualizar toda a configuração do job:
+#### Update entire job configuration:
 ```bash
 curl -X POST http://localhost:3000/job/config \
   -H "Content-Type: application/json" \
@@ -193,82 +193,7 @@ curl -X POST http://localhost:3000/job/config \
   }'
 ```
 
-#### Remover símbolo:
+#### Remove symbol:
 ```bash
 curl -X DELETE http://localhost:3000/job/symbols/ETH_BRL
-```
-
-#### Obter configuração de um símbolo:
-```bash
-curl http://localhost:3000/job/symbols/BTC_BRL
-```
-
-## Instalação
-
-```bash
-npm install
-npm start
-```
-
-## Configuração
-
-As credenciais da API estão configuradas no arquivo `src/server.js`:
-
-```javascript
-const API_KEY = 'sua-api-key';
-const API_SECRET = 'seu-api-secret';
-```
-
-## Logs
-
-O sistema gera logs detalhados de todas as operações:
-
-- 🔍 Verificação de variação para cada símbolo
-- 📊 Dados de preço e variação
-- 💰 Saldo disponível
-- 🛒 Criação de ordens de compra e venda
-- ✅ Sucesso ou ❌ Erro nas operações
-
-## Segurança
-
-⚠️ **Importante**: As credenciais da API estão hardcoded no código. Em produção, use variáveis de ambiente:
-
-```javascript
-const API_KEY = process.env.NOVADAX_API_KEY;
-const API_SECRET = process.env.NOVADAX_API_SECRET;
 ``` 
-
-# Regras de Compra e Venda do Bot (Explicação para Leigos)
-
-## Como o Bot Decide Quando Comprar e Vender
-
-O bot foi criado para automatizar a compra e venda de criptomoedas, sempre buscando o melhor momento para lucrar e evitar prejuízos. Veja como ele funciona de forma simples:
-
-### 1. Quando o Bot Compra?
-- O bot fica de olho no preço da moeda.
-- Ele só faz uma compra quando percebe que o preço caiu bastante em relação ao último valor de venda.
-- Exemplo: Se o bot vendeu a moeda por R$ 100, ele só vai comprar de novo se o preço cair, por exemplo, para R$ 92 (ou seja, caiu 8%).
-- Assim, o bot evita comprar quando o preço está alto.
-
-### 2. Quando o Bot Vende?
-- Depois de comprar, o bot espera o preço subir.
-- Ele só vende se o preço subir bastante em relação ao valor que ele pagou na última compra.
-- Exemplo: Se comprou por R$ 100, só vai vender se o preço subir para R$ 110 (ou seja, subiu 10%).
-- Assim, o bot garante que só vende se for para ter lucro.
-
-### 3. O que o Bot Nunca Faz
-- Nunca compra mais caro do que vendeu.
-- Nunca vende mais barato do que comprou.
-- Sempre espera uma diferença mínima para garantir lucro.
-
-### 4. Por que isso é importante?
-- Essas regras protegem você de comprar na alta (quando está caro) e vender na baixa (quando está barato).
-- O objetivo é sempre comprar barato e vender caro, aumentando as chances de lucro.
-
-### 5. O que você precisa saber
-- Você não precisa entender de gráficos ou acompanhar o mercado o tempo todo.
-- O bot faz tudo sozinho, seguindo essas regras simples e seguras.
-
----
-
-Se tiver dúvidas, peça ajuda para quem configurou o bot ou consulte este arquivo novamente! 

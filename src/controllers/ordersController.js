@@ -4,7 +4,14 @@ const { JobConfig } = require('../models/JobConfig');
 const sellStrategies = require('../utils/sellStrategies');
 
 /**
- * Handler de compra manual. Valida símbolo, executa ordem e atualiza tracking.
+ * Manual buy and sell handlers.
+ *
+ * IMPORTANT:
+ * The threshold protection rules (only buy if sellThreshold is negative, only sell if buyThreshold is positive)
+ * ONLY apply to the automatic job (automated execution).
+ *
+ * Manual operations (buy/sell through these handlers) are NOT blocked by these rules.
+ * The user can buy or sell manually at any price.
  */
 async function buyHandler(request, reply) {
   const { symbol } = request.body;
@@ -40,10 +47,10 @@ async function buyHandler(request, reply) {
         const { partialSales } = require('./jobController');
         if (partialSales && partialSales.delete) partialSales.delete(symbol);
       } catch (e) { /* ignora se não conseguir importar */ }
-      // Agora sim, atualize o tracking
+      // Now update the tracking
       await priceTrackingService.updatePriceTracking(symbol);
     }
-    // Valor em BRL para compra é o próprio amount
+    // Value in BRL for buy is the amount itself
     // Salvar/atualizar Operation com strategy, amount, price e valueBRL
     // (já feito acima)
     return reply.send({
@@ -59,7 +66,7 @@ async function buyHandler(request, reply) {
 }
 
 /**
- * Handler de venda manual. Valida símbolo, executa ordem e atualiza tracking.
+ * Handler for manual sell. Validates symbol, executes order, and updates tracking.
  */
 async function sellHandler(request, reply) {
   const { symbol } = request.body;
@@ -77,7 +84,7 @@ async function sellHandler(request, reply) {
     if (!strategyConfig) {
       return reply.status(400).send({ error: 'Invalid sell strategy for symbol' });
     }
-    // Buscar saldo disponível
+    // Find available balance
     const baseCurrency = symbol.split('_')[0];
     const balanceService = require('../services/balanceService');
     const balance = await balanceService.getBalance(baseCurrency);
@@ -85,19 +92,17 @@ async function sellHandler(request, reply) {
     if (available <= 0) {
       return reply.status(400).send({ error: 'No balance available to sell' });
     }
-    // Buscar vendas já realizadas (Operation)
+    // Find already executed sells (Operation)
     const Operation = require('../models/Operation');
     const sells = await Operation.find({ symbol, type: 'sell', status: 'success' }).sort({ createdAt: 1 });
-    // Descobrir qual nível da estratégia é o próximo
-    let levelIdx = sells.length;
-    // Para venda manual, sempre permita vender 100% do saldo disponível
-    const amount = Math.floor(available);
+    // For manual sell, always allow selling 100% of available balance
+    let amount = Math.floor(available);
     if (amount <= 0) {
       return reply.status(400).send({ error: 'Calculated sell amount is zero, cannot execute order.' });
     }
-    // Executar venda
+    // Execute sell
     const result = await ordersService.createSellOrder(symbol, amount);
-    // Atualiza o tracking de preço após venda bem-sucedida
+    // Update price tracking after successful sell
     if (result.status === 'success') {
       await priceTrackingService.updatePriceTracking(symbol);
       // Atualizar lastSellPrice no JobConfig
@@ -110,7 +115,7 @@ async function sellHandler(request, reply) {
         const { partialSales } = require('./jobController');
         if (partialSales && partialSales.delete) partialSales.delete(symbol);
       } catch (e) { /* ignora se não conseguir importar */ }
-      // Marcar operação como manual
+      // Mark operation as manual
       if (result._id) {
         await Operation.updateOne(
           { _id: result._id },
@@ -118,7 +123,7 @@ async function sellHandler(request, reply) {
         );
       }
     }
-    // Valor em BRL para venda é amount * price
+    // Value in BRL for sell is amount * price
     const valueBRL = (result.amount && result.price) ? Number(result.amount) * Number(result.price) : null;
     // Salvar/atualizar Operation com strategy, amount, price e valueBRL
     if (result._id) {
