@@ -74,6 +74,7 @@ const ordersRoutes = async (fastify, opts) => {
               symbol: { type: 'string' },
               type: { type: 'string' },
               amount: { type: 'number' },
+              value: { type: 'number' },
               price: { type: 'number' },
               status: { type: 'string' },
               response: { type: 'object' },
@@ -85,7 +86,22 @@ const ordersRoutes = async (fastify, opts) => {
     }
   }, async (request, reply) => {
     const history = await Operation.find().sort({ createdAt: -1 }).limit(100);
-    return reply.send(history);
+    
+    // Transformar o atributo baseado no tipo de operação
+    const transformedHistory = history.map(operation => {
+      const transformed = operation.toObject();
+      
+      if (operation.type === 'buy') {
+        // Para BUY: renomeia amount para value
+        transformed.value = transformed.amount;
+        delete transformed.amount;
+      }
+      // Para SELL: mantém amount como está
+      
+      return transformed;
+    });
+    
+    return reply.send(transformedHistory);
   });
 };
 
