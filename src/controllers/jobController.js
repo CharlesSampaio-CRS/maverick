@@ -589,27 +589,33 @@ async function jobRunHandler(request, reply) {
         // Check if sell monitoring is enabled for this strategy
         const strategyConfig = getStrategyConfig(symbolConfig);
         if (symbolConfig.monitoringEnabled) {
+          // NOVO: Checar maxSellPrice antes de iniciar o monitoramento
+          const priceStats = await priceTrackingService.getPriceStats(symbol);
+          const maxSellPrice = priceStats.maxSellPrice;
+          const currentPrice = parseFloat(ticker.lastPrice);
+          if (!maxSellPrice || currentPrice < maxSellPrice) {
+            return reply.send({
+              success: false,
+              message: `Sell not started: current price (${currentPrice}) has not reached the minimum sell price (${maxSellPrice}) yet.`
+            });
+          }
           // Start sell monitoring instead of selling immediately
           const sellMonitoringTracker = new SellMonitoringTracker(
             symbol,
-            parseFloat(ticker.lastPrice),
+            currentPrice,
             symbolConfig.sellThreshold,
             defaultMonitoringConfig.monitorMinutes,
             defaultMonitoringConfig.sellOnDropPercent
           );
-          
           sellMonitoringState.set(symbol, sellMonitoringTracker);
-          
           // Log sell monitoring start
           logJobEvent('sell_monitoring_started', symbol, {
-            initialPrice: parseFloat(ticker.lastPrice),
+            initialPrice: currentPrice,
             sellThreshold: symbolConfig.sellThreshold,
             change24h: change,
             strategy: symbolConfig.sellStrategy
           });
-          
-          console.log(`[JOB] Sell Monitoring Started | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${change}% | Threshold: ${symbolConfig.sellThreshold}% | Strategy: ${symbolConfig.sellStrategy}`);
-          
+          console.log(`[JOB] Sell Monitoring Started | Symbol: ${symbol} | Price: ${currentPrice} | 24h change: ${change}% | Threshold: ${symbolConfig.sellThreshold}% | Strategy: ${symbolConfig.sellStrategy}`);
           return reply.send({
             success: false,
             message: `Sell threshold reached (${change}% >= ${symbolConfig.sellThreshold}%). Sell monitoring started for optimal sell point.`,

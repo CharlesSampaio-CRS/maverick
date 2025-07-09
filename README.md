@@ -237,3 +237,38 @@ O sistema gera logs detalhados de todas as operações:
 const API_KEY = process.env.NOVADAX_API_KEY;
 const API_SECRET = process.env.NOVADAX_API_SECRET;
 ``` 
+
+# Regras de Compra e Venda do Bot (Explicação para Leigos)
+
+## Como o Bot Decide Quando Comprar e Vender
+
+O bot foi criado para automatizar a compra e venda de criptomoedas, sempre buscando o melhor momento para lucrar e evitar prejuízos. Veja como ele funciona de forma simples:
+
+### 1. Quando o Bot Compra?
+- O bot fica de olho no preço da moeda.
+- Ele só faz uma compra quando percebe que o preço caiu bastante em relação ao último valor de venda.
+- Exemplo: Se o bot vendeu a moeda por R$ 100, ele só vai comprar de novo se o preço cair, por exemplo, para R$ 92 (ou seja, caiu 8%).
+- Assim, o bot evita comprar quando o preço está alto.
+
+### 2. Quando o Bot Vende?
+- Depois de comprar, o bot espera o preço subir.
+- Ele só vende se o preço subir bastante em relação ao valor que ele pagou na última compra.
+- Exemplo: Se comprou por R$ 100, só vai vender se o preço subir para R$ 110 (ou seja, subiu 10%).
+- Assim, o bot garante que só vende se for para ter lucro.
+
+### 3. O que o Bot Nunca Faz
+- Nunca compra mais caro do que vendeu.
+- Nunca vende mais barato do que comprou.
+- Sempre espera uma diferença mínima para garantir lucro.
+
+### 4. Por que isso é importante?
+- Essas regras protegem você de comprar na alta (quando está caro) e vender na baixa (quando está barato).
+- O objetivo é sempre comprar barato e vender caro, aumentando as chances de lucro.
+
+### 5. O que você precisa saber
+- Você não precisa entender de gráficos ou acompanhar o mercado o tempo todo.
+- O bot faz tudo sozinho, seguindo essas regras simples e seguras.
+
+---
+
+Se tiver dúvidas, peça ajuda para quem configurou o bot ou consulte este arquivo novamente! 
