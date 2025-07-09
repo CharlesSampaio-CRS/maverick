@@ -1,4 +1,5 @@
 const ordersService = require('../services/ordersService');
+const priceTrackingService = require('../services/priceTrackingService');
 
 async function buyHandler(request, reply) {
   const { symbol } = request.body;
@@ -7,6 +8,10 @@ async function buyHandler(request, reply) {
   }
   try {
     const result = await ordersService.createBuyOrder(symbol);
+    // Atualiza o tracking de preço após compra bem-sucedida
+    if (result.status === 'success') {
+      await priceTrackingService.updatePriceTracking(symbol);
+    }
     return reply.send(result);
   } catch (err) {
     return reply.status(500).send({ error: 'Error creating order', details: err.message });
@@ -20,6 +25,10 @@ async function sellHandler(request, reply) {
   }
   try {
     const result = await ordersService.createSellOrder(symbol, amount);
+    // Atualiza o tracking de preço após venda bem-sucedida
+    if (result.status === 'success') {
+      await priceTrackingService.updatePriceTracking(symbol);
+    }
     return reply.send(result);
   } catch (err) {
     return reply.status(500).send({ error: 'Error creating order', details: err.message });

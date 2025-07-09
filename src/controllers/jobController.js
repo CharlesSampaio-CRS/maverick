@@ -1003,23 +1003,62 @@ async function jobRunHandler(request, reply) {
 async function jobConfigHandler(request, reply) {
   try {
     console.log('[JOB CONFIG] Processing configuration update');
-    const config = await jobService.updateConfig(request.body);
+    console.log('[JOB CONFIG] Request body:', JSON.stringify(request.body, null, 2));
     
-    // Update cron schedule if available
-    if (request.server.updateCronSchedule) {
-      await request.server.updateCronSchedule();
-    }
-    
-    // Log configuration update
-    logJobEvent('config_update', 'system', {
-      enabled: config.enabled,
-      cooldownMinutes: config.cooldownMinutes || 30,
-      totalSymbols: config.symbols.length,
-      enabledSymbols: config.symbols.filter(s => s.enabled).length,
-      disabledSymbols: config.symbols.filter(s => !s.enabled).length
-    });
+    // Se tem symbol no body, retornar apenas a configuração específica
+    if (request.body.symbol) {
+      console.log('[JOB CONFIG] Processing symbol-specific config for:', request.body.symbol);
+      
+      const config = await jobService.updateConfig(request.body);
+      console.log('[JOB CONFIG] Full config returned:', JSON.stringify(config, null, 2));
+      
+      // Update cron schedule if available
+      if (request.server.updateCronSchedule) {
+        await request.server.updateCronSchedule();
+      }
+      
+      // Buscar apenas a configuração do símbolo específico
+      const symbolConfig = config.symbols.find(s => s.symbol === request.body.symbol);
+      console.log('[JOB CONFIG] Found symbol config:', JSON.stringify(symbolConfig, null, 2));
+      
+      if (!symbolConfig) {
+        console.error('[JOB CONFIG] Symbol config not found in response');
+        return reply.status(404).send({ error: 'Symbol configuration not found after update' });
+      }
+      
+      // Log configuration update
+      logJobEvent('config_update', request.body.symbol, {
+        buyThreshold: symbolConfig.buyThreshold,
+        sellThreshold: symbolConfig.sellThreshold,
+        enabled: symbolConfig.enabled,
+        checkInterval: symbolConfig.checkInterval,
+        sellStrategy: symbolConfig.sellStrategy,
+        monitoringEnabled: symbolConfig.monitoringEnabled
+      });
 
-    return reply.send(config);
+      return reply.send(symbolConfig);
+    } else {
+      // Se não tem symbol, é atualização global - retornar configuração completa
+      console.log('[JOB CONFIG] Processing global config update');
+      
+      const config = await jobService.updateConfig(request.body);
+      
+      // Update cron schedule if available
+      if (request.server.updateCronSchedule) {
+        await request.server.updateCronSchedule();
+      }
+      
+      // Log configuration update
+      logJobEvent('config_update', 'system', {
+        enabled: config.enabled,
+        cooldownMinutes: config.cooldownMinutes || 30,
+        totalSymbols: config.symbols.length,
+        enabledSymbols: config.symbols.filter(s => s.enabled).length,
+        disabledSymbols: config.symbols.filter(s => !s.enabled).length
+      });
+
+      return reply.send(config);
+    }
   } catch (err) {
     console.error(`[JOB CONFIG] Error: ${err.message}`);
     logJobError('system', err, { context: 'jobConfigHandler' });
