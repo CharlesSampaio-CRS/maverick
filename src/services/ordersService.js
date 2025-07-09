@@ -84,7 +84,20 @@ async function createBuyOrder(symbol, amount = null) {
     const res = await httpClient.post(url, body, { headers });
 
     op.status = res.data?.success || res.data?.code === 'A10000' ? 'success' : 'failed';
-    op.price = res.data?.data?.price || null;
+    // Buscar o preço do ticker para garantir que é BRL
+    let tickerPrice = null;
+    if (op.status === 'success') {
+      try {
+        const tickerService = require('./tickerService');
+        const ticker = await tickerService.getTicker(symbol);
+        if (ticker && ticker.lastPrice) {
+          tickerPrice = parseFloat(ticker.lastPrice);
+        }
+      } catch (err) {
+        console.error('[ORDERS] Error fetching ticker price after order:', err.message);
+      }
+    }
+    op.price = tickerPrice || res.data?.data?.price || null;
     op.response = res.data;
     await op.save();
 
@@ -131,7 +144,20 @@ async function createSellOrder(symbol, amount) {
     const res = await httpClient.post(url, body, { headers });
 
     op.status = res.data?.success || res.data?.code === 'A10000' ? 'success' : 'failed';
-    op.price = res.data?.data?.price || null;
+    // Buscar o preço do ticker para garantir que é BRL
+    let tickerPrice = null;
+    if (op.status === 'success') {
+      try {
+        const tickerService = require('./tickerService');
+        const ticker = await tickerService.getTicker(symbol);
+        if (ticker && ticker.lastPrice) {
+          tickerPrice = parseFloat(ticker.lastPrice);
+        }
+      } catch (err) {
+        console.error('[ORDERS] Error fetching ticker price after order:', err.message);
+      }
+    }
+    op.price = tickerPrice || res.data?.data?.price || null;
     op.response = res.data;
 
     // --- PROFIT/LOSS CALCULATION ---
