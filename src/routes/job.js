@@ -7,9 +7,7 @@ const {
   jobGetSymbolHandler,
   jobStatusDetailedHandler,
   jobUpdateIntervalHandler,
-  getMonitoringStatusHandler,
-  updateBuyMonitoringConfigHandler,
-  updateSellMonitoringConfigHandler
+  getMonitoringStatusHandler
 } = require('../controllers/jobController');
 
 const jobConfigSchema = {
@@ -18,12 +16,14 @@ const jobConfigSchema = {
     symbol: { type: 'string' },
     buyThreshold: { type: 'number' },
     sellThreshold: { type: 'number' },
+    enabled: { type: 'boolean' },
     checkInterval: { type: 'string' },
     sellStrategy: { 
       type: 'string', 
       enum: ['security', 'basic', 'aggressive'],
       default: 'security'
     },
+    monitoringEnabled: { type: 'boolean' },
     createdAt: { type: 'string', format: 'date-time' },
     updatedAt: { type: 'string', format: 'date-time' },
     __v: { type: 'number' }
@@ -257,15 +257,7 @@ const jobRoutes = async (fastify, opts) => {
             activeSellMonitoring: { type: 'number' },
             buyMonitoring: { type: 'array' },
             sellMonitoring: { type: 'array' },
-            buyMonitoringConfig: { 
-              type: 'object',
-              properties: {
-                enabled: { type: 'boolean' },
-                monitorMinutes: { type: 'number' },
-                buyOnRisePercent: { type: 'number' }
-              }
-            },
-            sellStrategiesMonitoring: { type: 'object' },
+            defaultMonitoringConfig: { type: 'object' },
             summary: { 
               type: 'object',
               properties: {
@@ -279,38 +271,6 @@ const jobRoutes = async (fastify, opts) => {
       }
     }
   }, getMonitoringStatusHandler);
-
-  fastify.post('/job/buy-monitoring-config', {
-    schema: {
-      summary: 'Update buy monitoring configuration',
-      body: {
-        type: 'object',
-        properties: {
-          enabled: { type: 'boolean' },
-          monitorMinutes: { type: 'number', minimum: 5, maximum: 1440 },
-          buyOnRisePercent: { type: 'number', minimum: 0.1, maximum: 20 }
-        }
-      },
-      response: { 200: { type: 'object' } }
-    }
-  }, updateBuyMonitoringConfigHandler);
-
-  fastify.post('/job/sell-monitoring-config', {
-    schema: {
-      summary: 'Update sell monitoring configuration for a strategy',
-      body: {
-        type: 'object',
-        properties: {
-          strategyType: { type: 'string', enum: ['security', 'basic', 'aggressive'] },
-          enabled: { type: 'boolean' },
-          monitorMinutes: { type: 'number', minimum: 5, maximum: 1440 },
-          sellOnDropPercent: { type: 'number', minimum: 0.1, maximum: 20 }
-        },
-        required: ['strategyType']
-      },
-      response: { 200: { type: 'object' } }
-    }
-  }, updateSellMonitoringConfigHandler);
 };
 
 module.exports = jobRoutes; 

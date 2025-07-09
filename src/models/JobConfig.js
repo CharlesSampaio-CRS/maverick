@@ -11,6 +11,7 @@ const JobConfigSchema = new mongoose.Schema({
     enum: ['security', 'basic', 'aggressive'], 
     default: 'security' 
   }, // Estratégia de venda por símbolo
+  monitoringEnabled: { type: Boolean, default: false }, // Habilitar monitoring para este símbolo
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });

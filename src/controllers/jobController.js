@@ -63,12 +63,7 @@ const sellStrategies = {
       { percentage: 0.2, priceIncrease: 0.15 }  // 20% em +15%
     ],
     trailingStop: 0.05, // 5% abaixo do preço mais alto
-    minSellValueBRL: 50, // mínimo R$50 por venda
-    monitoring: {
-      enabled: false,
-      monitorMinutes: 60,
-      sellOnDropPercent: 2.5
-    }
+    minSellValueBRL: 50 // mínimo R$50 por venda
   },
   basic: {
     name: 'Basic',
@@ -79,12 +74,7 @@ const sellStrategies = {
       { percentage: 0.3, priceIncrease: 0.10 }  // 30% em +10%
     ],
     trailingStop: 0.05, // 5% abaixo do preço mais alto
-    minSellValueBRL: 50, // mínimo R$50 por venda
-    monitoring: {
-      enabled: false,
-      monitorMinutes: 60,
-      sellOnDropPercent: 2.5
-    }
+    minSellValueBRL: 50 // mínimo R$50 por venda
   },
   aggressive: {
     name: 'Aggressive',
@@ -93,20 +83,15 @@ const sellStrategies = {
       { percentage: 1.0, priceIncrease: 0 }     // 100% imediatamente
     ],
     trailingStop: 0.02, // 2% abaixo do preço mais alto (mais agressivo)
-    minSellValueBRL: 50, // mínimo R$50 por venda
-    monitoring: {
-      enabled: false,
-      monitorMinutes: 60,
-      sellOnDropPercent: 2.5
-    }
+    minSellValueBRL: 50 // mínimo R$50 por venda
   }
 };
 
-// Configuração global de monitoring para buy
-const buyMonitoringConfig = {
-  enabled: false,
+// Configuração padrão de monitoring
+const defaultMonitoringConfig = {
   monitorMinutes: 60,
-  buyOnRisePercent: 2.5
+  buyOnRisePercent: 2.5,
+  sellOnDropPercent: 2.5
 };
 
 // Enhanced monitoring classes
@@ -566,14 +551,14 @@ async function jobRunHandler(request, reply) {
         }
         
         // Check if buy monitoring is enabled
-        if (buyMonitoringConfig.enabled) {
+        if (symbolConfig.monitoringEnabled) {
           // Start buy monitoring instead of buying immediately
           const buyMonitoringTracker = new BuyMonitoringTracker(
             symbol,
             parseFloat(ticker.lastPrice),
             symbolConfig.buyThreshold,
-            buyMonitoringConfig.monitorMinutes,
-            buyMonitoringConfig.buyOnRisePercent
+            defaultMonitoringConfig.monitorMinutes,
+            defaultMonitoringConfig.buyOnRisePercent
           );
           
           buyMonitoringState.set(symbol, buyMonitoringTracker);
@@ -602,14 +587,14 @@ async function jobRunHandler(request, reply) {
         
         // Check if sell monitoring is enabled for this strategy
         const strategyConfig = getStrategyConfig(symbolConfig);
-        if (strategyConfig.monitoring && strategyConfig.monitoring.enabled) {
+        if (symbolConfig.monitoringEnabled) {
           // Start sell monitoring instead of selling immediately
           const sellMonitoringTracker = new SellMonitoringTracker(
             symbol,
             parseFloat(ticker.lastPrice),
             symbolConfig.sellThreshold,
-            strategyConfig.monitoring.monitorMinutes,
-            strategyConfig.monitoring.sellOnDropPercent
+            defaultMonitoringConfig.monitorMinutes,
+            defaultMonitoringConfig.sellOnDropPercent
           );
           
           sellMonitoringState.set(symbol, sellMonitoringTracker);
@@ -1317,34 +1302,12 @@ async function getMonitoringStatusHandler(request, reply) {
       sellMonitoringList.push(monitoring.getStatus());
     }
     
-    // Ensure buyMonitoringConfig is properly structured
-    const currentBuyConfig = {
-      enabled: buyMonitoringConfig.enabled || false,
-      monitorMinutes: buyMonitoringConfig.monitorMinutes || 60,
-      buyOnRisePercent: buyMonitoringConfig.buyOnRisePercent || 2.5
-    };
-    
-    // Get current sell strategies with monitoring config
-    const currentSellStrategies = {};
-    for (const [strategyType, strategy] of Object.entries(sellStrategies)) {
-      currentSellStrategies[strategyType] = {
-        name: strategy.name,
-        description: strategy.description,
-        monitoring: {
-          enabled: strategy.monitoring?.enabled || false,
-          monitorMinutes: strategy.monitoring?.monitorMinutes || 60,
-          sellOnDropPercent: strategy.monitoring?.sellOnDropPercent || 2.5
-        }
-      };
-    }
-    
     return reply.send({
       activeBuyMonitoring: buyMonitoringList.length,
       activeSellMonitoring: sellMonitoringList.length,
       buyMonitoring: buyMonitoringList,
       sellMonitoring: sellMonitoringList,
-      buyMonitoringConfig: currentBuyConfig,
-      sellStrategiesMonitoring: currentSellStrategies,
+      defaultMonitoringConfig,
       summary: {
         totalActive: buyMonitoringList.length + sellMonitoringList.length,
         avgBuyTimeElapsed: buyMonitoringList.length > 0 ? 
@@ -1355,61 +1318,6 @@ async function getMonitoringStatusHandler(request, reply) {
     });
   } catch (err) {
     logJobError('system', err, { context: 'getMonitoringStatusHandler' });
-    return reply.status(500).send({ error: err.message });
-  }
-}
-
-// Endpoint to update buy monitoring configuration
-async function updateBuyMonitoringConfigHandler(request, reply) {
-  try {
-    const { enabled, monitorMinutes, buyOnRisePercent } = request.body;
-    
-    if (enabled !== undefined) buyMonitoringConfig.enabled = enabled;
-    if (monitorMinutes !== undefined) {
-      if (monitorMinutes < 5 || monitorMinutes > 1440) {
-        return reply.status(400).send({ error: 'monitorMinutes must be between 5 and 1440 (24 hours)' });
-      }
-      buyMonitoringConfig.monitorMinutes = monitorMinutes;
-    }
-    if (buyOnRisePercent !== undefined) {
-      if (buyOnRisePercent < 0.1 || buyOnRisePercent > 20) {
-        return reply.status(400).send({ error: 'buyOnRisePercent must be between 0.1 and 20' });
-      }
-      buyMonitoringConfig.buyOnRisePercent = buyOnRisePercent;
-    }
-    
-    return reply.send(buyMonitoringConfig);
-  } catch (err) {
-    return reply.status(500).send({ error: err.message });
-  }
-}
-
-// Endpoint to update sell monitoring configuration for a strategy
-async function updateSellMonitoringConfigHandler(request, reply) {
-  try {
-    const { strategyType, enabled, monitorMinutes, sellOnDropPercent } = request.body;
-    const strategyConfig = sellStrategies[strategyType];
-
-    if (!strategyConfig) {
-      return reply.status(400).send({ error: `Strategy type "${strategyType}" not found.` });
-    }
-
-    if (enabled !== undefined) strategyConfig.monitoring.enabled = enabled;
-    if (monitorMinutes !== undefined) {
-      if (monitorMinutes < 5 || monitorMinutes > 1440) {
-        return reply.status(400).send({ error: 'monitorMinutes must be between 5 and 1440 (24 hours)' });
-      }
-      strategyConfig.monitoring.monitorMinutes = monitorMinutes;
-    }
-    if (sellOnDropPercent !== undefined) {
-      if (sellOnDropPercent < 0.1 || sellOnDropPercent > 20) {
-        return reply.status(400).send({ error: 'sellOnDropPercent must be between 0.1 and 20' });
-      }
-      strategyConfig.monitoring.sellOnDropPercent = sellOnDropPercent;
-    }
-    
-    return reply.send(sellStrategies);
-  } catch (err) {
     return reply.status(500).send({ error: err.message });
   }
 }
@@ -1430,6 +1338,4 @@ module.exports = {
   updateSaleStrategyConfigHandler,
   getProfitSummaryHandler,
   getMonitoringStatusHandler,
-  updateBuyMonitoringConfigHandler,
-  updateSellMonitoringConfigHandler,
 }; 
