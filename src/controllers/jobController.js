@@ -526,12 +526,13 @@ async function jobRunHandler(request, reply) {
         if (symbolConfig.monitoringEnabled) {
           // NOVO: Checar lastSellPrice antes de iniciar o monitoramento
           const priceStats = await priceTrackingService.getPriceStats(symbol);
-          const lastSellPrice = priceStats.lastSellPrice;
+          const lastBuyPrice = priceStats.lastBuyPrice;
           const currentPrice = parseFloat(ticker.lastPrice);
-          if (!lastSellPrice || currentPrice < lastSellPrice) {
+          const minSellPrice = lastBuyPrice * (1 + (symbolConfig.sellThreshold / 100));
+          if (!lastBuyPrice || currentPrice < minSellPrice) {
             return reply.send({
               success: false,
-              message: `Sell not started: current price (${currentPrice}) has not reached the minimum sell price (${lastSellPrice}) yet.`
+              message: `Sell not started: current price (${currentPrice}) has not reached the minimum sell price (${minSellPrice}) yet.`
             });
           }
           // Start sell monitoring instead of selling immediately
