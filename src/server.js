@@ -56,9 +56,41 @@ fastify.register(fastifySwagger, {
   swagger: {
     info: {
       title: 'NovaDAX Bot API',
-      description: 'API for order automation',
-      version: '1.0.0'
-    }
+      description: 'API for NovaDAX order automation with advanced trading strategies',
+      version: '1.0.0',
+      contact: {
+        name: 'NovaDAX Bot API',
+        url: 'https://github.com/your-repo'
+      }
+    },
+    tags: [
+      {
+        name: 'Trading Bot',
+        description: 'Main trading bot endpoints - job control, symbols and execution'
+      },
+      {
+        name: 'Strategies',
+        description: 'Sale strategy configuration and performance monitoring'
+      },
+      {
+        name: 'Monitoring',
+        description: 'Active monitoring status and buy/sell configurations'
+      },
+      {
+        name: 'Balance',
+        description: 'Currency balance queries'
+      },
+      {
+        name: 'Prices',
+        description: 'Ticker data and price variations'
+      },
+      {
+        name: 'Orders',
+        description: 'Manual buy/sell order execution and history'
+      }
+    ],
+    consumes: ['application/json'],
+    produces: ['application/json']
   }
 });
 fastify.register(fastifySwaggerUi, { routePrefix: '/docs' });

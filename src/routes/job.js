@@ -7,6 +7,7 @@ const {
   jobGetSymbolHandler,
   jobStatusDetailedHandler,
   jobUpdateIntervalHandler,
+  jobStrategyStatusHandler,
   getMonitoringStatusHandler
 } = require('../controllers/jobController');
 
@@ -146,6 +147,7 @@ const detailedStatusSchema = {
 const jobRoutes = async (fastify, opts) => {
   fastify.get('/job/status', {
     schema: {
+      tags: ['Trading Bot'],
       summary: 'Get job list',
       response: {
         200: {
@@ -164,11 +166,17 @@ const jobRoutes = async (fastify, opts) => {
   }, jobStatusHandler);
 
   fastify.post('/job/config', {
-    schema: { summary: 'Update job configuration', body: jobConfigSchema, response: { 200: jobConfigSchema } }
+    schema: { 
+      tags: ['Trading Bot'],
+      summary: 'Update job configuration', 
+      body: jobConfigSchema, 
+      response: { 200: jobConfigSchema } 
+    }
   }, jobConfigHandler);
 
   fastify.post('/job/interval', {
     schema: { 
+      tags: ['Trading Bot'],
       summary: 'Update only job interval', 
       body: intervalSchema, 
       response: { 200: jobConfigSchema } 
@@ -177,6 +185,7 @@ const jobRoutes = async (fastify, opts) => {
 
   fastify.post('/job/toggle/:symbol', {
     schema: {
+      tags: ['Trading Bot'],
       summary: 'Toggle symbol enabled status',
       params: {
         type: 'object',
@@ -188,6 +197,7 @@ const jobRoutes = async (fastify, opts) => {
 
   fastify.post('/job/run', {
     schema: {
+      tags: ['Trading Bot'],
       summary: 'Run job for a symbol',
       body: symbolBodySchema,
       response: { 200: { type: 'object', properties: { success: { type: 'boolean' }, message: { type: 'string' } } } }
@@ -195,11 +205,16 @@ const jobRoutes = async (fastify, opts) => {
   }, jobRunHandler);
 
   fastify.delete('/job/symbols/:symbol', {
-    schema: { summary: 'Remove symbol', response: { 200: jobConfigSchema } }
+    schema: { 
+      tags: ['Trading Bot'],
+      summary: 'Remove symbol', 
+      response: { 200: jobConfigSchema } 
+    }
   }, jobRemoveSymbolHandler);
 
   fastify.get('/job/symbols/:symbol', {
     schema: {
+      tags: ['Trading Bot'],
       summary: 'Get symbol configuration',
       response: {
         200: {
@@ -219,20 +234,26 @@ const jobRoutes = async (fastify, opts) => {
   }, jobGetSymbolHandler);
 
   fastify.get('/job/status/detailed', {
-    schema: { summary: 'Get detailed job status', response: { 200: detailedStatusSchema } }
+    schema: { 
+      tags: ['Trading Bot'],
+      summary: 'Get detailed job status', 
+      response: { 200: detailedStatusSchema } 
+    }
   }, jobStatusDetailedHandler);
 
   // Rotas para configuração da estratégia de venda
   fastify.get('/job/sale-strategy', {
     schema: {
-      summary: 'Obter configuração da estratégia de venda',
+      tags: ['Strategies'],
+      summary: 'Get sale strategy configuration',
       response: { 200: saleStrategyConfigSchema }
     }
   }, require('../controllers/jobController').getSaleStrategyConfigHandler);
 
   fastify.put('/job/sale-strategy', {
     schema: {
-      summary: 'Alterar configuração da estratégia de venda',
+      tags: ['Strategies'],
+      summary: 'Update sale strategy configuration',
       body: saleStrategyConfigUpdateSchema,
       response: { 200: saleStrategyConfigSchema }
     }
@@ -240,14 +261,76 @@ const jobRoutes = async (fastify, opts) => {
 
   fastify.get('/job/profit-summary', {
     schema: {
+      tags: ['Strategies'],
       summary: 'Get total profit/loss summary',
       response: { 200: profitSummarySchema }
     }
   }, require('../controllers/jobController').getProfitSummaryHandler);
 
+  fastify.get('/job/strategy-status', {
+    schema: {
+      tags: ['Strategies'],
+      summary: 'Get status of active sale strategies',
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            activeStrategies: { type: 'number' },
+            strategies: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  symbol: { type: 'string' },
+                  strategy: { type: 'string' },
+                  strategyName: { type: 'string' },
+                  initialAmount: { type: 'number' },
+                  remainingAmount: { type: 'number' },
+                  firstSellPrice: { type: 'number' },
+                  currentHighestPrice: { type: 'number' },
+                  trailingStop: { type: 'number' },
+                  profitMetrics: {
+                    type: 'object',
+                    properties: {
+                      avgSellPrice: { type: 'number' },
+                      profitPercent: { type: 'string' },
+                      highestPrice: { type: 'number' },
+                      maxProfitPercent: { type: 'string' }
+                    }
+                  },
+                  remainingTargets: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        percentage: { type: 'number' },
+                        price: { type: 'number' },
+                        priceIncrease: { type: 'string' }
+                      }
+                    }
+                  },
+                  lastUpdate: { type: 'string', format: 'date-time' },
+                  age: { type: 'string' }
+                }
+              }
+            },
+            summary: {
+              type: 'object',
+              properties: {
+                totalActive: { type: 'number' },
+                avgProfitPotential: { type: 'string' }
+              }
+            }
+          }
+        }
+      }
+    }
+  }, jobStrategyStatusHandler);
+
   // Monitoring endpoints
   fastify.get('/job/monitoring-status', {
     schema: {
+      tags: ['Monitoring'],
       summary: 'Get monitoring status for all symbols',
       response: { 
         200: {

@@ -4,6 +4,7 @@ const Operation = require('../models/Operation');
 const ordersRoutes = async (fastify, opts) => {
   fastify.post('/buy', {
     schema: {
+      tags: ['Orders'],
       summary: 'Create market buy order',
       body: {
         type: 'object',
@@ -32,6 +33,7 @@ const ordersRoutes = async (fastify, opts) => {
 
   fastify.post('/sell', {
     schema: {
+      tags: ['Orders'],
       summary: 'Create market sell order',
       body: {
         type: 'object',
@@ -61,6 +63,7 @@ const ordersRoutes = async (fastify, opts) => {
 
   fastify.get('/operations/history', {
     schema: {
+      tags: ['Orders'],
       summary: 'Operations history',
       response: {
         200: {

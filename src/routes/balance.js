@@ -3,6 +3,7 @@ const { balanceHandler, balanceCurrencyHandler } = require('../controllers/balan
 const balanceRoutes = async (fastify, opts) => {
   fastify.get('/balance', {
     schema: {
+      tags: ['Balance'],
       summary: 'Get balance of all currencies',
       response: {
         200: {
@@ -23,6 +24,7 @@ const balanceRoutes = async (fastify, opts) => {
 
   fastify.get('/balance/:currency', {
     schema: {
+      tags: ['Balance'],
       summary: 'Get balance of specific currency',
       params: {
         type: 'object',
