@@ -87,8 +87,13 @@ class PriceTrackingService {
         return { shouldBuy: true, reason: 'Price tracking disabled' };
       }
 
+      // Nova regra: só permite compra se sellThreshold for negativo
+      if (typeof config.sellThreshold !== 'number' || config.sellThreshold >= 0) {
+        return { shouldBuy: false, reason: 'sellThreshold deve ser negativo para permitir compra' };
+      }
+
       if (config.lastBuyPrice) {
-        const sellThreshold = typeof config.sellThreshold === 'number' ? config.sellThreshold : 0;
+        const sellThreshold = config.sellThreshold;
         const buyLimit = Number((config.lastBuyPrice * (1 + sellThreshold / 100)).toFixed(10));
         const roundedCurrentPrice = Number(currentPrice.toFixed(10));
         if (roundedCurrentPrice >= buyLimit) {
@@ -115,8 +120,13 @@ class PriceTrackingService {
         return { shouldSell: true, reason: 'Price tracking disabled' };
       }
 
+      // Nova regra: só permite venda se buyThreshold for positivo
+      if (typeof config.buyThreshold !== 'number' || config.buyThreshold <= 0) {
+        return { shouldSell: false, reason: 'buyThreshold deve ser positivo para permitir venda' };
+      }
+
       if (config.lastSellPrice) {
-        const buyThreshold = typeof config.buyThreshold === 'number' ? config.buyThreshold : 0;
+        const buyThreshold = config.buyThreshold;
         const sellLimit = Number((config.lastSellPrice * (1 + buyThreshold / 100)).toFixed(10));
         const roundedCurrentPrice = Number(currentPrice.toFixed(10));
         if (roundedCurrentPrice <= sellLimit) {
