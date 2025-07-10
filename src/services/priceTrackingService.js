@@ -67,7 +67,7 @@ class PriceTrackingService {
         if (roundedCurrentPrice >= buyLimit) {
           return {
             shouldBuy: false,
-            reason: `Current price (${currentPrice}) >= lastBuyPrice (${config.lastSellPrice}) + sellThreshold (${sellThreshold}%) = ${buyLimit}`
+            reason: `Current price (${currentPrice}) >= lastSellPrice (${config.lastSellPrice}) + buyThreshold (${buyThreshold}%) = ${buyLimit}`
           };
         }
       }

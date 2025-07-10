@@ -1117,4 +1117,5 @@ module.exports = {
   jobToggleHandler,
   getAllStrategiesHandler,
   stopMonitoringHandler,
+  partialSales, // <-- adicionar exportação aqui
 }; 
