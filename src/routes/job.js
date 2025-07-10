@@ -8,7 +8,6 @@ const {
   jobStatusDetailedHandler,
   jobUpdateIntervalHandler,
   jobStrategyStatusHandler,
-  getMonitoringStatusHandler,
   getPriceStatsHandler,
   resetPriceTrackingHandler
 } = require('../controllers/jobController');
@@ -26,7 +25,6 @@ const jobConfigSchema = {
       enum: ['security', 'basic', 'aggressive'],
       default: 'security'
     },
-    monitoringEnabled: { type: 'boolean' },
     minBuyPrice: { type: 'number' },
     maxSellPrice: { type: 'number' },
     priceTrackingEnabled: { type: 'boolean' },
@@ -298,61 +296,8 @@ const jobRoutes = async (fastify, opts) => {
     }
   }, require('../controllers/jobController').getAllStrategiesHandler);
 
-  // Monitoring endpoints
-  fastify.get('/job/monitoring-status', {
-    schema: {
-      tags: ['Monitoring'],
-      summary: 'Get monitoring status for all symbols',
-      response: { 
-        200: {
-          type: 'object',
-          properties: {
-            activeBuyMonitoring: { type: 'number' },
-            activeSellMonitoring: { type: 'number' },
-            buyMonitoring: { type: 'array' },
-            sellMonitoring: { type: 'array' },
-            defaultMonitoringConfig: { type: 'object' },
-            summary: { 
-              type: 'object',
-              properties: {
-                totalActive: { type: 'number' },
-                avgBuyTimeElapsed: { type: 'string' },
-                avgSellTimeElapsed: { type: 'string' }
-              }
-            }
-          }
-        }
-      }
-    }
-  }, getMonitoringStatusHandler);
-
-  fastify.get('/job/price-stats/:symbol', {
-    schema: {
-      tags: ['Monitoring'],
-      summary: 'Get price statistics for a symbol',
-      params: {
-        type: 'object',
-        properties: {
-          symbol: { type: 'string' }
-        }
-      },
-      response: {
-        200: {
-          type: 'object',
-          properties: {
-            symbol: { type: 'string' },
-            currentPrice: { type: 'number' },
-            highestPrice: { type: 'number' },
-            lowestPrice: { type: 'number' },
-            averagePrice: { type: 'number' },
-            priceChange: { type: 'number' },
-            priceChangePercent: { type: 'string' },
-            lastUpdate: { type: 'string', format: 'date-time' }
-          }
-        }
-      }
-    }
-  }, getPriceStatsHandler);
+  // Remove the /job/price-stats endpoint
+  // fastify.get('/job/price-stats/:symbol', { ... }, getPriceStatsHandler);
 
   fastify.post('/job/reset-price-tracking/:symbol', {
     schema: {

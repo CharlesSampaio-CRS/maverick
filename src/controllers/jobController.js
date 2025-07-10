@@ -7,7 +7,7 @@ const priceTrackingService = require('../services/priceTrackingService');
 const Operation = require('../models/Operation');
 const cron = require('node-cron');
 const sellStrategies = require('../utils/sellStrategies');
-const JobConfig = require('../models/JobConfig'); // Added import for JobConfig
+const { JobConfig } = require('../models/JobConfig'); // Corrigido para destructuring
 
 // New Relic logging helpers
 function logJobEvent(eventType, symbol, data = {}) {
@@ -50,141 +50,9 @@ function logJobError(symbol, error, context = {}) {
 const lastExecutions = new Map();
 // In-memory storage for partial sales state with enhanced tracking
 const partialSales = new Map();
-// In-memory storage for monitoring state when thresholds are reached
-const buyMonitoringState = new Map();
-const sellMonitoringState = new Map();
-
-// Configuração padrão de monitoring
-const defaultMonitoringConfig = {
-  monitorMinutes: 60,
-  buyOnRisePercent: 2.5,
-  sellOnDropPercent: 2.5
-};
 
 // Enhanced monitoring classes
-class BuyMonitoringTracker {
-  constructor(symbol, initialPrice, buyThreshold, monitorMinutes = 60, buyOnRisePercent = 2.5) {
-    this.symbol = symbol;
-    this.initialPrice = initialPrice;
-    this.buyThreshold = buyThreshold;
-    this.monitorMinutes = monitorMinutes;
-    this.buyOnRisePercent = buyOnRisePercent;
-    this.lowestPrice = initialPrice;
-    this.startTime = Date.now();
-    this.lastUpdate = Date.now();
-  }
-
-  updatePrice(currentPrice) {
-    this.lastUpdate = Date.now();
-    if (currentPrice < this.lowestPrice) {
-      this.lowestPrice = currentPrice;
-    }
-  }
-
-  shouldBuy(currentPrice) {
-    const timeElapsed = (Date.now() - this.startTime) / (1000 * 60); // minutes
-    const priceRisePercent = ((currentPrice - this.lowestPrice) / this.lowestPrice) * 100;
-    
-    // Buy if time expired
-    if (timeElapsed >= this.monitorMinutes) {
-      return {
-        shouldBuy: true,
-        reason: `Time expired (${timeElapsed.toFixed(1)}min >= ${this.monitorMinutes}min)`,
-        price: currentPrice,
-        lowestPrice: this.lowestPrice
-      };
-    }
-    
-    // Buy if price rose significantly from lowest
-    if (priceRisePercent >= this.buyOnRisePercent) {
-      return {
-        shouldBuy: true,
-        reason: `Price rose ${priceRisePercent.toFixed(2)}% from lowest (${this.lowestPrice})`,
-        price: currentPrice,
-        lowestPrice: this.lowestPrice
-      };
-    }
-    
-    return { shouldBuy: false };
-  }
-
-  getStatus() {
-    const timeElapsed = (Date.now() - this.startTime) / (1000 * 60);
-    const remainingTime = Math.max(0, this.monitorMinutes - timeElapsed);
-    return {
-      symbol: this.symbol,
-      initialPrice: this.initialPrice,
-      currentLowestPrice: this.lowestPrice,
-      timeElapsed: timeElapsed.toFixed(1),
-      remainingTime: remainingTime.toFixed(1),
-      buyThreshold: this.buyThreshold,
-      monitorMinutes: this.monitorMinutes,
-      buyOnRisePercent: this.buyOnRisePercent
-    };
-  }
-}
-
-class SellMonitoringTracker {
-  constructor(symbol, initialPrice, sellThreshold, monitorMinutes = 60, sellOnDropPercent = 2.5) {
-    this.symbol = symbol;
-    this.initialPrice = initialPrice;
-    this.sellThreshold = sellThreshold;
-    this.monitorMinutes = monitorMinutes;
-    this.sellOnDropPercent = sellOnDropPercent;
-    this.highestPrice = initialPrice;
-    this.startTime = Date.now();
-    this.lastUpdate = Date.now();
-  }
-
-  updatePrice(currentPrice) {
-    this.lastUpdate = Date.now();
-    if (currentPrice > this.highestPrice) {
-      this.highestPrice = currentPrice;
-    }
-  }
-
-  shouldSell(currentPrice) {
-    const timeElapsed = (Date.now() - this.startTime) / (1000 * 60); // minutes
-    const priceDropPercent = ((this.highestPrice - currentPrice) / this.highestPrice) * 100;
-    
-    // Sell if time expired
-    if (timeElapsed >= this.monitorMinutes) {
-      return {
-        shouldSell: true,
-        reason: `Time expired (${timeElapsed.toFixed(1)}min >= ${this.monitorMinutes}min)`,
-        price: currentPrice,
-        highestPrice: this.highestPrice
-      };
-    }
-    
-    // Sell if price dropped significantly from peak
-    if (priceDropPercent >= this.sellOnDropPercent) {
-      return {
-        shouldSell: true,
-        reason: `Price dropped ${priceDropPercent.toFixed(2)}% from peak (${this.highestPrice})`,
-        price: currentPrice,
-        highestPrice: this.highestPrice
-      };
-    }
-    
-    return { shouldSell: false };
-  }
-
-  getStatus() {
-    const timeElapsed = (Date.now() - this.startTime) / (1000 * 60);
-    const remainingTime = Math.max(0, this.monitorMinutes - timeElapsed);
-    return {
-      symbol: this.symbol,
-      initialPrice: this.initialPrice,
-      currentHighestPrice: this.highestPrice,
-      timeElapsed: timeElapsed.toFixed(1),
-      remainingTime: remainingTime.toFixed(1),
-      sellThreshold: this.sellThreshold,
-      monitorMinutes: this.monitorMinutes,
-      sellOnDropPercent: this.sellOnDropPercent
-    };
-  }
-}
+// [REMOVER] BuyMonitoringTracker, SellMonitoringTracker, buyMonitoringState, sellMonitoringState, getMonitoringStatusHandler, stopMonitoringHandler, e qualquer referência a monitoring
 
 // Função para obter configuração de estratégia por símbolo
 function getStrategyConfig(symbolConfig) {
@@ -294,50 +162,18 @@ function cleanupOldStrategies() {
   }
   
   // Cleanup old buy monitoring (older than 2 hours)
-  for (const [symbol, monitoring] of buyMonitoringState.entries()) {
-    const timeElapsed = (now - monitoring.startTime) / (1000 * 60 * 60); // hours
-    if (timeElapsed > 2) {
-      console.log(`[JOB] Cleanup | Removing old buy monitoring for ${symbol} | Age: ${timeElapsed.toFixed(1)}h`);
-      
-      // Log cleanup event
-      logJobEvent('buy_monitoring_cleanup', symbol, {
-        age: timeElapsed.toFixed(1),
-        initialPrice: monitoring.initialPrice,
-        lowestPrice: monitoring.lowestPrice,
-        reason: 'timeout'
-      });
-      
-      buyMonitoringState.delete(symbol);
-      cleanedCount++;
-    }
-  }
+  // [REMOVER] buyMonitoringState, sellMonitoringState, BuyMonitoringTracker, SellMonitoringTracker, getMonitoringStatusHandler, stopMonitoringHandler, e qualquer uso relacionado
   
   // Cleanup old sell monitoring (older than 2 hours)
-  for (const [symbol, monitoring] of sellMonitoringState.entries()) {
-    const timeElapsed = (now - monitoring.startTime) / (1000 * 60 * 60); // hours
-    if (timeElapsed > 2) {
-      console.log(`[JOB] Cleanup | Removing old sell monitoring for ${symbol} | Age: ${timeElapsed.toFixed(1)}h`);
-      
-      // Log cleanup event
-      logJobEvent('sell_monitoring_cleanup', symbol, {
-        age: timeElapsed.toFixed(1),
-        initialPrice: monitoring.initialPrice,
-        highestPrice: monitoring.highestPrice,
-        reason: 'timeout'
-      });
-      
-      sellMonitoringState.delete(symbol);
-      cleanedCount++;
-    }
-  }
+  // [REMOVER] buyMonitoringState, sellMonitoringState, BuyMonitoringTracker, SellMonitoringTracker, getMonitoringStatusHandler, stopMonitoringHandler, e qualquer uso relacionado
   
   // Log cleanup summary
   if (cleanedCount > 0) {
     logJobEvent('cleanup_summary', 'system', {
       cleanedCount,
       remainingStrategies: partialSales.size,
-      remainingBuyMonitoring: buyMonitoringState.size,
-      remainingSellMonitoring: sellMonitoringState.size,
+      remainingBuyMonitoring: 0, // [REMOVER] buyMonitoringState.size,
+      remainingSellMonitoring: 0, // [REMOVER] sellMonitoringState.size,
       timestamp: new Date().toISOString()
     });
   }
@@ -396,199 +232,32 @@ async function jobRunHandler(request, reply) {
     const change = parseFloat(ticker.changePercent24h);
     let action = null;
 
-    // Check if symbol is in buy monitoring mode
-    const buyMonitoring = buyMonitoringState.get(symbol);
-    if (buyMonitoring) {
-      // Update buy monitoring with current price
-      buyMonitoring.updatePrice(parseFloat(ticker.lastPrice));
-      
-      // Check if we should buy based on monitoring
-      const buyDecision = buyMonitoring.shouldBuy(parseFloat(ticker.lastPrice));
-      
-      if (buyDecision.shouldBuy) {
-        // Remove from monitoring and proceed with buy
-        buyMonitoringState.delete(symbol);
-        
-        // Log buy monitoring completion
-        logJobEvent('buy_monitoring_complete', symbol, {
-          reason: buyDecision.reason,
-          initialPrice: buyMonitoring.initialPrice,
-          lowestPrice: buyDecision.lowestPrice,
-          finalPrice: buyDecision.price,
-          timeElapsed: ((Date.now() - buyMonitoring.startTime) / (1000 * 60)).toFixed(1)
-        });
-        
-        console.log(`[JOB] Buy Monitoring Complete | Symbol: ${symbol} | ${buyDecision.reason} | Initial: ${buyMonitoring.initialPrice} | Lowest: ${buyDecision.lowestPrice} | Final: ${buyDecision.price}`);
-        
-        // Proceed with buy action
-        action = 'buy';
-      } else {
-        // Still monitoring - log status and return
-        const status = buyMonitoring.getStatus();
-        logJobEvent('buy_monitoring_active', symbol, status);
-        
-        console.log(`[JOB] Buy Monitoring Active | Symbol: ${symbol} | Current: ${ticker.lastPrice} | Lowest: ${buyMonitoring.lowestPrice} | Time: ${status.timeElapsed}min | Remaining: ${status.remainingTime}min`);
-        
-        return reply.send({
-          success: false,
-          message: `Buy monitoring active: ${buyDecision.reason || 'Waiting for optimal buy point'}`,
-          buyMonitoring: status
-        });
-      }
-    }
-
-    // Check if symbol is in sell monitoring mode
-    const sellMonitoring = sellMonitoringState.get(symbol);
-    if (sellMonitoring) {
-      // Update sell monitoring with current price
-      sellMonitoring.updatePrice(parseFloat(ticker.lastPrice));
-      
-      // Check if we should sell based on monitoring
-      const sellDecision = sellMonitoring.shouldSell(parseFloat(ticker.lastPrice));
-      
-      if (sellDecision.shouldSell) {
-        // Remove from monitoring and proceed with sell
-        sellMonitoringState.delete(symbol);
-        
-        // Log sell monitoring completion
-        logJobEvent('sell_monitoring_complete', symbol, {
-          reason: sellDecision.reason,
-          initialPrice: sellMonitoring.initialPrice,
-          highestPrice: sellDecision.highestPrice,
-          finalPrice: sellDecision.price,
-          timeElapsed: ((Date.now() - sellMonitoring.startTime) / (1000 * 60)).toFixed(1)
-        });
-        
-        console.log(`[JOB] Sell Monitoring Complete | Symbol: ${symbol} | ${sellDecision.reason} | Initial: ${sellMonitoring.initialPrice} | Highest: ${sellDecision.highestPrice} | Final: ${sellDecision.price}`);
-        
-        // Proceed with sell action
-        action = 'sell';
-      } else {
-        // Still monitoring - log status and return
-        const status = sellMonitoring.getStatus();
-        logJobEvent('sell_monitoring_active', symbol, status);
-        
-        console.log(`[JOB] Sell Monitoring Active | Symbol: ${symbol} | Current: ${ticker.lastPrice} | Highest: ${sellMonitoring.highestPrice} | Time: ${status.timeElapsed}min | Remaining: ${status.remainingTime}min`);
-        
-        return reply.send({
-          success: false,
-          message: `Sell monitoring active: ${sellDecision.reason || 'Waiting for optimal sell point'}`,
-          sellMonitoring: status
-        });
-      }
-    }
-
-    // Normal threshold checking (only if not in monitoring mode)
     if (!action) {
-      // Validação explícita dos thresholds
+      // Regra de COMPRA: comprar se a variação 24h for menor ou igual ao buyThreshold
       if (change <= symbolConfig.buyThreshold) {
-        if (change !== symbolConfig.buyThreshold && change > symbolConfig.buyThreshold) {
-          return reply.send({ success: false, message: `Buy not executed: changePercent24h (${change}) is not <= buyThreshold (${symbolConfig.buyThreshold})` });
+        // Verifica saldo BRL para compra
+        const balance = await balanceService.getBalance('BRL');
+        const max = parseFloat(balance.available);
+        if (max >= 25) { // mínimo R$10
+          action = 'buy';
+        } 
+      } 
+      // Regra de VENDA: vender se a variação 24h for maior ou igual ao sellThreshold
+      if (change >= symbolConfig.sellThreshold) {
+        // Verifica saldo da moeda base para venda
+        const baseCurrency = symbol.split('_')[0];
+        const balance = await balanceService.getBalance(baseCurrency);
+        const amount = parseFloat(balance.available);
+        if (amount > 1) {
+          action = 'sell';
         }
-        
-        // Check if buy monitoring is enabled
-        if (symbolConfig.monitoringEnabled) {
-          // Start buy monitoring instead of buying immediately
-          const buyMonitoringTracker = new BuyMonitoringTracker(
-            symbol,
-            parseFloat(ticker.lastPrice),
-            symbolConfig.buyThreshold,
-            defaultMonitoringConfig.monitorMinutes,
-            defaultMonitoringConfig.buyOnRisePercent
-          );
-          
-          buyMonitoringState.set(symbol, buyMonitoringTracker);
-          
-          // Log buy monitoring start
-          logJobEvent('buy_monitoring_started', symbol, {
-            initialPrice: parseFloat(ticker.lastPrice),
-            buyThreshold: symbolConfig.buyThreshold,
-            change24h: change
-          });
-          
-          console.log(`[JOB] Buy Monitoring Started | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${change}% | Threshold: ${symbolConfig.buyThreshold}%`);
-          
-          return reply.send({
-            success: false,
-            message: `Buy threshold reached (${change}% <= ${symbolConfig.buyThreshold}%). Buy monitoring started for optimal buy point.`,
-            buyMonitoring: buyMonitoringTracker.getStatus()
-          });
-        }
-        
-        action = 'buy';
-      } else if (change >= symbolConfig.sellThreshold) {
-        if (change !== symbolConfig.sellThreshold && change < symbolConfig.sellThreshold) {
-          return reply.send({ success: false, message: `Sell not executed: changePercent24h (${change}) is not >= sellThreshold (${symbolConfig.sellThreshold})` });
-        }
-        
-        // Check if sell monitoring is enabled for this strategy
-        const strategyConfig = getStrategyConfig(symbolConfig);
-        if (symbolConfig.monitoringEnabled) {
-          // NOVO: Checar lastSellPrice antes de iniciar o monitoramento
-          const priceStats = await priceTrackingService.getPriceStats(symbol);
-          const lastBuyPrice = priceStats.lastBuyPrice;
-          const currentPrice = parseFloat(ticker.lastPrice);
-          const minSellPrice = lastBuyPrice * (1 + (symbolConfig.sellThreshold / 100));
-          if (!lastBuyPrice || currentPrice < minSellPrice) {
-            return reply.send({
-              success: false,
-              message: `Sell not started: current price (${currentPrice}) has not reached the minimum sell price (${minSellPrice}) yet.`
-            });
-          }
-          // Start sell monitoring instead of selling immediately
-          const sellMonitoringTracker = new SellMonitoringTracker(
-            symbol,
-            currentPrice,
-            symbolConfig.sellThreshold,
-            defaultMonitoringConfig.monitorMinutes,
-            defaultMonitoringConfig.sellOnDropPercent
-          );
-          sellMonitoringState.set(symbol, sellMonitoringTracker);
-          // Log sell monitoring start
-          logJobEvent('sell_monitoring_started', symbol, {
-            initialPrice: currentPrice,
-            sellThreshold: symbolConfig.sellThreshold,
-            change24h: change,
-            strategy: symbolConfig.sellStrategy
-          });
-          console.log(`[JOB] Sell Monitoring Started | Symbol: ${symbol} | Price: ${currentPrice} | 24h change: ${change}% | Threshold: ${symbolConfig.sellThreshold}% | Strategy: ${symbolConfig.sellStrategy}`);
-          return reply.send({
-            success: false,
-            message: `Sell threshold reached (${change}% >= ${symbolConfig.sellThreshold}%). Sell monitoring started for optimal sell point.`,
-            sellMonitoring: sellMonitoringTracker.getStatus()
-          });
-        }
-        
-        action = 'sell';
       }
     }
 
-    if (!action) {
-      const reason = 'no buy/sell condition met';
-      console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | ${reason} | BuyThreshold: ${symbolConfig.buyThreshold} | SellThreshold: ${symbolConfig.sellThreshold} | Date: ${nowStr}`);
-      // Send to New Relic as a custom event (in English)
-      logJobEvent('no_condition_met', symbol, {
-        reason,
-        price: ticker.lastPrice,
-        change24h: ticker.changePercent24h,
-        buyThreshold: symbolConfig.buyThreshold,
-        sellThreshold: symbolConfig.sellThreshold,
-        status: 'executed',
-        startTime: request.startTime || nowStr,
-        timestamp: nowStr
-      });
-      return reply.send({ success: false, message: 'No buy/sell condition met.' });
+    if(!action){
+      return reply.send({ success: false, message: 'No buy or sell condition met. Price is outside buy/sell thresholds.' });
     }
 
-    // Log action decision
-    logJobEvent('action_decision', symbol, { 
-      action, 
-      price: ticker.lastPrice, 
-      change24h: ticker.changePercent24h,
-      buyThreshold: symbolConfig.buyThreshold,
-      sellThreshold: symbolConfig.sellThreshold,
-      timestamp: nowStr 
-    });
 
     // 4. Execute order
     if (action === 'buy') {
@@ -634,7 +303,7 @@ async function jobRunHandler(request, reply) {
       const max = parseFloat(balance.available);
       let amount = Math.max(Math.floor(max), 10); // minimum R$10
       
-      if (amount < 10) {
+      if (amount < 25) {
         const reason = 'insufficient BRL balance';
         console.log(`[JOB] Not executed | Symbol: ${symbol} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Reason: ${reason} | Date: ${nowStr}`);
         logJobEvent('failed', symbol, { 
@@ -660,17 +329,6 @@ async function jobRunHandler(request, reply) {
         );
       }
       
-      // Log buy execution
-      logJobEvent('buy_executed', symbol, { 
-        amount, 
-        price: ticker.lastPrice, 
-        change24h: ticker.changePercent24h,
-        orderStatus: op.status,
-        orderId: op.id,
-        priceCheck,
-        timestamp: nowStr 
-      });
-      
       if (op.status === 'success') {
         logJobMetric('buy_amount', symbol, amount);
         logJobMetric('buy_value_brl', symbol, amount);
@@ -678,7 +336,8 @@ async function jobRunHandler(request, reply) {
       
       console.log(`[JOB] Executed | Symbol: ${symbol} | Action: BUY | Value: R$${amount} | Price: ${ticker.lastPrice} | 24h change: ${ticker.changePercent24h}% | Strategy: ${symbolConfig.sellStrategy} | BuyThreshold: ${symbolConfig.buyThreshold} | SellThreshold: ${symbolConfig.sellThreshold} | Date: ${nowStr}`);
       return reply.send({ success: op.status === 'success', message: 'Buy order executed', op, priceCheck });
-    } else {
+    } 
+    if(action == 'sell') {
       // Get base currency balance
       const baseCurrency = symbol.split('_')[0];
       const balance = await balanceService.getBalance(baseCurrency);
@@ -701,7 +360,7 @@ async function jobRunHandler(request, reply) {
       const currentPrice = parseFloat(ticker.lastPrice);
       
       // NOVO: Só permite vender se buyThreshold for positivo
-      if (typeof symbolConfig.buyThreshold !== 'number' || symbolConfig.buyThreshold <= 0) {
+      if (typeof symbolConfig.sellThreshold !== 'number' || symbolConfig.sellThreshold <= 0) {
         return reply.send({
           success: false,
           message: `Sell not allowed: buyThreshold must be positive (current: ${symbolConfig.buyThreshold})`
@@ -851,7 +510,7 @@ async function jobRunHandler(request, reply) {
           if (sellAmount <= 0) {
             const reason = 'calculated sell amount is zero after flooring';
             logJobEvent('sell_strategy_failed', symbol, { reason, amount: sellDecision.amount });
-            return reply.send({ success: false, message: 'Sell amount is zero, cannot execute order.' });
+            return reply.send({ success: false, message: 'Sell amount is zero, cannot execute order' });
           }
           const op = await ordersService.createSellOrder(symbol, sellAmount);
           
@@ -868,13 +527,15 @@ async function jobRunHandler(request, reply) {
               orderId: op.id,
               strategy: symbolConfig.sellStrategy,
               strategyName: strategyConfig.name,
+              byValue: symbolConfig.byValue,
               timestamp: nowStr 
             });
             
             logJobMetric('sell_amount', symbol, sellDecision.amount);
             logJobMetric('sell_value_brl', symbol, sellValueBRL);
             
-            console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL ${(sellDecision.level.percentage * 100).toFixed(0)}% | Amount: ${sellDecision.amount} | Price: ${currentPrice} | Strategy: ${symbolConfig.sellStrategy} | BuyThreshold: ${symbolConfig.buyThreshold} | SellThreshold: ${symbolConfig.sellThreshold} | Reason: ${sellDecision.reason} | Date: ${nowStr}`);
+            const strategyInfo = symbolConfig.byValue ? `Value-based (${symbolConfig.valueSellThreshold}%)` : symbolConfig.sellStrategy;
+            console.log(`[JOB] Executed | Symbol: ${symbol} | Action: SELL ${(sellDecision.level.percentage * 100).toFixed(0)}% | Amount: ${sellDecision.amount} | Price: ${currentPrice} | Strategy: ${strategyInfo} | BuyThreshold: ${symbolConfig.buyThreshold} | SellThreshold: ${symbolConfig.sellThreshold} | Reason: ${sellDecision.reason} | Date: ${nowStr}`);
             
             // Check if strategy is complete
             if (tracker.isComplete()) {
@@ -891,14 +552,19 @@ async function jobRunHandler(request, reply) {
                 highestPrice: metrics.highestPrice,
                 strategy: symbolConfig.sellStrategy,
                 strategyName: strategyConfig.name,
+                byValue: symbolConfig.byValue,
                 timestamp: nowStr 
               });
               
               logJobMetric('strategy_profit_percent', symbol, parseFloat(metrics.profitPercent));
               logJobMetric('strategy_max_profit_percent', symbol, parseFloat(metrics.maxProfitPercent));
               
-              console.log(`[JOB] Strategy Complete | Symbol: ${symbol} | Strategy: ${symbolConfig.sellStrategy} | All levels executed | Total profit strategy finished`);
-              console.log(`[JOB] Performance | Avg Sell Price: ${metrics.avgSellPrice} | Profit: +${metrics.profitPercent}% | Max Profit: +${metrics.maxProfitPercent}% | Highest Price: ${metrics.highestPrice}`);
+              console.log(`[JOB] Strategy Complete | Symbol: ${symbol} | Strategy: ${strategyInfo} | All levels executed | Total profit strategy finished`);
+              if (symbolConfig.byValue) {
+                console.log(`[JOB] Performance | Initial Value: R$${metrics.initialValueBRL?.toFixed(2)} | Final Value: R$${metrics.currentValueBRL?.toFixed(2)} | Profit: +${metrics.profitPercent}% | Highest Value: R$${metrics.highestValueBRL?.toFixed(2)}`);
+              } else {
+                console.log(`[JOB] Performance | Avg Sell Price: ${metrics.avgSellPrice} | Profit: +${metrics.profitPercent}% | Max Profit: +${metrics.maxProfitPercent}% | Highest Price: ${metrics.highestPrice}`);
+              }
               
               return reply.send({ 
                 success: true, 
@@ -909,13 +575,16 @@ async function jobRunHandler(request, reply) {
                   name: strategyConfig.name,
                   status: 'complete', 
                   totalExecuted: true,
+                  byValue: symbolConfig.byValue,
                   performance: metrics
                 }
               });
             } else {
-              // Log remaining targets
-              const remainingTargets = tracker.sellLevels.filter(l => !l.executed);
-              console.log(`[JOB] Strategy Update | Symbol: ${symbol} | Strategy: ${symbolConfig.sellStrategy} | Remaining targets: ${remainingTargets.map(l => `+${((l.price/tracker.firstSellPrice-1)*100).toFixed(1)}%`).join(', ')} | Trailing stop: ${tracker.trailingStop}`);
+              // Log remaining targets (apenas para estratégias não baseadas em valor)
+              if (!symbolConfig.byValue) {
+                const remainingTargets = tracker.sellLevels.filter(l => !l.executed);
+                console.log(`[JOB] Strategy Update | Symbol: ${symbol} | Strategy: ${strategyInfo} | Remaining targets: ${remainingTargets.map(l => `+${((l.price/tracker.firstSellPrice-1)*100).toFixed(1)}%`).join(', ')} | Trailing stop: ${tracker.trailingStop}`);
+              }
               
               return reply.send({ 
                 success: true, 
@@ -924,7 +593,8 @@ async function jobRunHandler(request, reply) {
                 strategy: {
                   type: symbolConfig.sellStrategy,
                   name: strategyConfig.name,
-                  remainingTargets: remainingTargets.map(l => ({ percentage: l.percentage * 100, price: l.price })),
+                  byValue: symbolConfig.byValue,
+                  remainingTargets: symbolConfig.byValue ? [] : tracker.sellLevels.filter(l => !l.executed).map(l => ({ percentage: l.percentage * 100, price: l.price })),
                   trailingStop: tracker.trailingStop,
                   highestPrice: tracker.highestPrice
                 }
@@ -944,35 +614,68 @@ async function jobRunHandler(request, reply) {
           }
         } else {
           // No sell condition met - log current status
-          const remainingTargets = tracker.sellLevels.filter(l => !l.executed);
-          const profitPotential = ((tracker.highestPrice / tracker.firstSellPrice - 1) * 100).toFixed(2);
-          
-          // Log strategy monitoring
-          logJobEvent('strategy_monitoring', symbol, { 
-            currentPrice,
-            highestPrice: tracker.highestPrice,
-            profitPotential: parseFloat(profitPotential),
-            remainingTargets: remainingTargets.length,
-            trailingStop: tracker.trailingStop,
-            strategy: symbolConfig.sellStrategy,
-            timestamp: nowStr 
-          });
-          
-          console.log(`[JOB] Strategy Monitor | Symbol: ${symbol} | Strategy: ${symbolConfig.sellStrategy} | Current: ${currentPrice} | Highest: ${tracker.highestPrice} | Profit: +${profitPotential}% | Waiting for targets: ${remainingTargets.map(l => `+${((l.price/tracker.firstSellPrice-1)*100).toFixed(1)}%`).join(', ')} | Stop: ${tracker.trailingStop} | Date: ${nowStr}`);
-          
-          return reply.send({ 
-            success: false, 
-            message: 'Strategy active - waiting for price targets or trailing stop',
-            strategy: {
-              type: symbolConfig.sellStrategy,
-              name: strategyConfig.name,
+          if (symbolConfig.byValue) {
+            // Para estratégia baseada em valor
+            const metrics = tracker.getProfitMetrics();
+            const valueIncreasePercent = ((metrics.currentValueBRL - metrics.initialValueBRL) / metrics.initialValueBRL * 100).toFixed(2);
+            
+            // Log strategy monitoring
+            logJobEvent('strategy_monitoring', symbol, { 
+              currentPrice,
+              currentValueBRL: metrics.currentValueBRL,
+              valueIncreasePercent: parseFloat(valueIncreasePercent),
+              strategy: symbolConfig.sellStrategy,
+              byValue: true,
+              timestamp: nowStr 
+            });
+            
+            console.log(`[JOB] Value Strategy Monitor | Symbol: ${symbol} | Strategy: ${symbolConfig.sellStrategy} | Current: ${currentPrice} | Value: R$${metrics.currentValueBRL?.toFixed(2)} | Profit: +${valueIncreasePercent}% | Waiting for +${symbolConfig.valueSellThreshold}% | Date: ${nowStr}`);
+            
+            return reply.send({ 
+              success: false, 
+              message: 'Value-based strategy active - waiting for value target',
+              strategy: {
+                type: symbolConfig.sellStrategy,
+                name: strategyConfig.name,
+                byValue: true,
+                currentPrice,
+                currentValueBRL: metrics.currentValueBRL?.toFixed(2),
+                valueIncreasePercent: `${valueIncreasePercent}%`,
+                targetThreshold: `${symbolConfig.valueSellThreshold}%`
+              }
+            });
+          } else {
+            // Para estratégias baseadas em preço (lógica original)
+            const remainingTargets = tracker.sellLevels.filter(l => !l.executed);
+            const profitPotential = ((tracker.highestPrice / tracker.firstSellPrice - 1) * 100).toFixed(2);
+            
+            // Log strategy monitoring
+            logJobEvent('strategy_monitoring', symbol, { 
               currentPrice,
               highestPrice: tracker.highestPrice,
-              profitPotential: `${profitPotential}%`,
-              remainingTargets: remainingTargets.map(l => ({ percentage: l.percentage * 100, price: l.price })),
-              trailingStop: tracker.trailingStop
-            }
-          });
+              profitPotential: parseFloat(profitPotential),
+              remainingTargets: remainingTargets.length,
+              trailingStop: tracker.trailingStop,
+              strategy: symbolConfig.sellStrategy,
+              timestamp: nowStr 
+            });
+            
+            console.log(`[JOB] Strategy Monitor | Symbol: ${symbol} | Strategy: ${symbolConfig.sellStrategy} | Current: ${currentPrice} | Highest: ${tracker.highestPrice} | Profit: +${profitPotential}% | Waiting for targets: ${remainingTargets.map(l => `+${((l.price/tracker.firstSellPrice-1)*100).toFixed(1)}%`).join(', ')} | Stop: ${tracker.trailingStop} | Date: ${nowStr}`);
+            
+            return reply.send({ 
+              success: false, 
+              message: 'Strategy active - waiting for price targets or trailing stop',
+              strategy: {
+                type: symbolConfig.sellStrategy,
+                name: strategyConfig.name,
+                currentPrice,
+                highestPrice: tracker.highestPrice,
+                profitPotential: `${profitPotential}%`,
+                remainingTargets: remainingTargets.map(l => ({ percentage: l.percentage * 100, price: l.price })),
+                trailingStop: tracker.trailingStop
+              }
+            });
+          }
         }
       }
     }
@@ -1318,27 +1021,8 @@ async function getProfitSummaryHandler(request, reply) {
 // Endpoint to get monitoring status
 async function getMonitoringStatusHandler(request, reply) {
   try {
-    const buyMonitoring = Array.from(buyMonitoringState.entries()).map(([symbol, monitoring]) => ({
-      symbol,
-      ...monitoring.getStatus()
-    }));
-    
-    const sellMonitoring = Array.from(sellMonitoringState.entries()).map(([symbol, monitoring]) => ({
-      symbol,
-      ...monitoring.getStatus()
-    }));
-    
-    if (buyMonitoring.length === 0 && sellMonitoring.length === 0) {
-      return reply.send({ message: 'Sem monitoramento ativo no momento.' });
-    }
-    return reply.send({
-      buyMonitoring,
-      sellMonitoring,
-      summary: {
-        activeBuyMonitoring: buyMonitoring.length,
-        activeSellMonitoring: sellMonitoring.length
-      }
-    });
+    // [REMOVER] buyMonitoringState, sellMonitoringState, BuyMonitoringTracker, SellMonitoringTracker, getMonitoringStatusHandler, stopMonitoringHandler, e qualquer uso relacionado
+    return reply.send({ message: 'Sem monitoramento ativo no momento.' });
   } catch (err) {
     logJobError('system', err, { context: 'getMonitoringStatusHandler' });
     return reply.status(500).send({ error: err.message });
@@ -1448,6 +1132,12 @@ async function getAllStrategiesHandler(request, reply) {
   }
 }
 
+// Handler para parar o monitoring ativo de um símbolo
+async function stopMonitoringHandler(request, reply) {
+  // [REMOVER] buyMonitoringState, sellMonitoringState, BuyMonitoringTracker, SellMonitoringTracker, getMonitoringStatusHandler, stopMonitoringHandler, e qualquer uso relacionado
+  return reply.send({ success: false, message: 'Monitoring status is not tracked.' });
+}
+
 
 module.exports = {
   jobRunHandler,
@@ -1466,4 +1156,5 @@ module.exports = {
   jobStatusHandler,
   jobToggleHandler,
   getAllStrategiesHandler,
+  stopMonitoringHandler,
 }; 
