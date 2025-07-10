@@ -50,16 +50,6 @@ function logJobError(symbol, error, context = {}) {
 const lastExecutions = new Map();
 // In-memory storage for partial sales state with enhanced tracking
 const partialSales = new Map();
-// In-memory storage for monitoring state when thresholds are reached
-const buyMonitoringState = new Map();
-const sellMonitoringState = new Map();
-
-// Configuração padrão de monitoring
-const defaultMonitoringConfig = {
-  monitorMinutes: 60,
-  buyOnRisePercent: 2.5,
-  sellOnDropPercent: 2.5
-};
 
 // Enhanced monitoring classes
 class BuyMonitoringTracker {
@@ -294,50 +284,18 @@ function cleanupOldStrategies() {
   }
   
   // Cleanup old buy monitoring (older than 2 hours)
-  for (const [symbol, monitoring] of buyMonitoringState.entries()) {
-    const timeElapsed = (now - monitoring.startTime) / (1000 * 60 * 60); // hours
-    if (timeElapsed > 2) {
-      console.log(`[JOB] Cleanup | Removing old buy monitoring for ${symbol} | Age: ${timeElapsed.toFixed(1)}h`);
-      
-      // Log cleanup event
-      logJobEvent('buy_monitoring_cleanup', symbol, {
-        age: timeElapsed.toFixed(1),
-        initialPrice: monitoring.initialPrice,
-        lowestPrice: monitoring.lowestPrice,
-        reason: 'timeout'
-      });
-      
-      buyMonitoringState.delete(symbol);
-      cleanedCount++;
-    }
-  }
+  // [REMOVER] buyMonitoringState, sellMonitoringState, BuyMonitoringTracker, SellMonitoringTracker, getMonitoringStatusHandler, stopMonitoringHandler, e qualquer uso relacionado
   
   // Cleanup old sell monitoring (older than 2 hours)
-  for (const [symbol, monitoring] of sellMonitoringState.entries()) {
-    const timeElapsed = (now - monitoring.startTime) / (1000 * 60 * 60); // hours
-    if (timeElapsed > 2) {
-      console.log(`[JOB] Cleanup | Removing old sell monitoring for ${symbol} | Age: ${timeElapsed.toFixed(1)}h`);
-      
-      // Log cleanup event
-      logJobEvent('sell_monitoring_cleanup', symbol, {
-        age: timeElapsed.toFixed(1),
-        initialPrice: monitoring.initialPrice,
-        highestPrice: monitoring.highestPrice,
-        reason: 'timeout'
-      });
-      
-      sellMonitoringState.delete(symbol);
-      cleanedCount++;
-    }
-  }
+  // [REMOVER] buyMonitoringState, sellMonitoringState, BuyMonitoringTracker, SellMonitoringTracker, getMonitoringStatusHandler, stopMonitoringHandler, e qualquer uso relacionado
   
   // Log cleanup summary
   if (cleanedCount > 0) {
     logJobEvent('cleanup_summary', 'system', {
       cleanedCount,
       remainingStrategies: partialSales.size,
-      remainingBuyMonitoring: buyMonitoringState.size,
-      remainingSellMonitoring: sellMonitoringState.size,
+      remainingBuyMonitoring: 0, // [REMOVER] buyMonitoringState.size,
+      remainingSellMonitoring: 0, // [REMOVER] sellMonitoringState.size,
       timestamp: new Date().toISOString()
     });
   }
@@ -1185,27 +1143,8 @@ async function getProfitSummaryHandler(request, reply) {
 // Endpoint to get monitoring status
 async function getMonitoringStatusHandler(request, reply) {
   try {
-    const buyMonitoring = Array.from(buyMonitoringState.entries()).map(([symbol, monitoring]) => ({
-      symbol,
-      ...monitoring.getStatus()
-    }));
-    
-    const sellMonitoring = Array.from(sellMonitoringState.entries()).map(([symbol, monitoring]) => ({
-      symbol,
-      ...monitoring.getStatus()
-    }));
-    
-    if (buyMonitoring.length === 0 && sellMonitoring.length === 0) {
-      return reply.send({ message: 'Sem monitoramento ativo no momento.' });
-    }
-    return reply.send({
-      buyMonitoring,
-      sellMonitoring,
-      summary: {
-        activeBuyMonitoring: buyMonitoring.length,
-        activeSellMonitoring: sellMonitoring.length
-      }
-    });
+    // [REMOVER] buyMonitoringState, sellMonitoringState, BuyMonitoringTracker, SellMonitoringTracker, getMonitoringStatusHandler, stopMonitoringHandler, e qualquer uso relacionado
+    return reply.send({ message: 'Sem monitoramento ativo no momento.' });
   } catch (err) {
     logJobError('system', err, { context: 'getMonitoringStatusHandler' });
     return reply.status(500).send({ error: err.message });
@@ -1317,15 +1256,8 @@ async function getAllStrategiesHandler(request, reply) {
 
 // Handler para parar o monitoring ativo de um símbolo
 async function stopMonitoringHandler(request, reply) {
-  const { symbol } = request.params;
-  let removed = false;
-  if (buyMonitoringState.delete(symbol)) removed = true;
-  if (sellMonitoringState.delete(symbol)) removed = true;
-  if (removed) {
-    return reply.send({ success: true, message: `Monitoring stopped for ${symbol}` });
-  } else {
-    return reply.send({ success: false, message: `No active monitoring found for ${symbol}` });
-  }
+  // [REMOVER] buyMonitoringState, sellMonitoringState, BuyMonitoringTracker, SellMonitoringTracker, getMonitoringStatusHandler, stopMonitoringHandler, e qualquer uso relacionado
+  return reply.send({ success: false, message: 'Monitoring status is not tracked.' });
 }
 
 

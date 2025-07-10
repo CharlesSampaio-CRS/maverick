@@ -312,7 +312,6 @@ const jobRoutes = async (fastify, opts) => {
             activeSellMonitoring: { type: 'number' },
             buyMonitoring: { type: 'array' },
             sellMonitoring: { type: 'array' },
-            defaultMonitoringConfig: { type: 'object' },
             summary: { 
               type: 'object',
               properties: {
