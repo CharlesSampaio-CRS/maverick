@@ -88,19 +88,19 @@ class PriceTrackingService {
         return { shouldSell: true, reason: 'Price tracking disabled' };
       }
 
-      // Nova regra: só permite venda se buyThreshold for positivo
+      // Nova regra: só permite venda se sellThreshold for positivo
       if (typeof config.sellThreshold !== 'number' || config.sellThreshold <= 0) {
         return { shouldSell: false, reason: 'sellThreshold deve ser positivo para permitir venda' };
       }
 
-      if (config.lastSellPrice) {
-        const buyThreshold = config.buyThreshold;
-        const sellLimit = Number((config.lastSellPrice * (1 + buyThreshold / 100)).toFixed(10));
+      if (config.lastBuyPrice) {
+        const sellThreshold = config.sellThreshold;
+        const sellLimit = Number((config.lastBuyPrice * (1 + sellThreshold / 100)).toFixed(10));
         const roundedCurrentPrice = Number(currentPrice.toFixed(10));
         if (roundedCurrentPrice <= sellLimit) {
           return {
             shouldSell: false,
-            reason: `Current price (${currentPrice}) <= lastSellPrice (${config.lastSellPrice}) + buyThreshold (${buyThreshold}%) = ${sellLimit}`
+            reason: `Current price (${currentPrice}) <= lastBuyPrice (${config.lastBuyPrice}) + sellThreshold (${sellThreshold}%) = ${sellLimit}`
           };
         }
       }

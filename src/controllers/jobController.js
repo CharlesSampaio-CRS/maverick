@@ -394,30 +394,30 @@ async function executeSellOrder(symbol, symbolConfig, ticker, nowStr, reply) {
 
   const currentPrice = parseFloat(ticker.lastPrice);
   
-  // Validate buyThreshold is positive
-  if (typeof symbolConfig.buyThreshold !== 'number' || symbolConfig.buyThreshold <= 0) {
-    logJobValidation(symbol, 'Sell not allowed: buyThreshold must be positive', nowStr, {
-      buyThreshold: symbolConfig.buyThreshold
+  // Validate sellThreshold is positive
+  if (typeof symbolConfig.sellThreshold !== 'number' || symbolConfig.sellThreshold <= 0) {
+    logJobValidation(symbol, 'Sell not allowed: sellThreshold must be positive', nowStr, {
+      sellThreshold: symbolConfig.sellThreshold
     });
     return reply.send({
       success: false,
-      message: `Sell not allowed: buyThreshold must be positive (current: ${symbolConfig.buyThreshold})`
+      message: `Sell not allowed: sellThreshold must be positive (current: ${symbolConfig.sellThreshold})`
     });
   }
   
   // Check price limit based on lastBuyPrice
   if (symbolConfig.lastBuyPrice) {
-    const sellLimit = symbolConfig.lastBuyPrice * (1 + (symbolConfig.buyThreshold / 100));
+    const sellLimit = symbolConfig.lastBuyPrice * (1 + (symbolConfig.sellThreshold / 100));
     if (currentPrice <= sellLimit) {
       logJobValidation(symbol, 'Sell skipped: price not above limit', nowStr, {
         currentPrice,
         lastBuyPrice: symbolConfig.lastBuyPrice,
-        buyThreshold: symbolConfig.buyThreshold,
+        sellThreshold: symbolConfig.sellThreshold,
         sellLimit
       });
       return reply.send({
         success: false,
-        message: `Sell skipped: current price (${currentPrice}) is not greater than lastBuyPrice (${symbolConfig.lastBuyPrice}) + buyThreshold (${symbolConfig.buyThreshold}%) = ${sellLimit}`
+        message: `Sell skipped: current price (${currentPrice}) is not greater than lastBuyPrice (${symbolConfig.lastBuyPrice}) + sellThreshold (${symbolConfig.sellThreshold}%) = ${sellLimit}`
       });
     }
   }
