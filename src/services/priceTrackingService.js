@@ -29,12 +29,6 @@ class PriceTrackingService {
 
       let updated = false;
 
-      // Atualizar preço mínimo de compra
-      // (Removido: não atualizar lastBuyPrice aqui)
-
-      // Atualizar preço máximo de venda
-      // (Removido: não atualizar lastSellPrice aqui)
-
       if (updated) {
         config.updatedAt = new Date();
         await config.save();
@@ -61,23 +55,19 @@ class PriceTrackingService {
   async shouldBuyAtPrice(symbol, currentPrice) {
     try {
       const config = await JobConfig.findOne({ symbol });
-      if (!config || !config.priceTrackingEnabled) {
-        return { shouldBuy: true, reason: 'Price tracking disabled' };
+      // Nova regra: só permite compra se buyThreshold for negativo
+      if (typeof config.buyThreshold !== 'number' || config.buyThreshold >= 0) {
+        return { shouldBuy: false, reason: 'buyThreshold deve ser negativo para permitir compra' };
       }
 
-      // Nova regra: só permite compra se sellThreshold for negativo
-      if (typeof config.sellThreshold !== 'number' || config.sellThreshold >= 0) {
-        return { shouldBuy: false, reason: 'sellThreshold deve ser negativo para permitir compra' };
-      }
-
-      if (config.lastBuyPrice) {
-        const sellThreshold = config.sellThreshold;
-        const buyLimit = Number((config.lastBuyPrice * (1 + sellThreshold / 100)).toFixed(10));
+      if (config.lastSellPrice) {
+        const buyThreshold = config.buyThreshold;
+        const buyLimit = Number((config.lastSellPrice * (1 + buyThreshold / 100)).toFixed(10));
         const roundedCurrentPrice = Number(currentPrice.toFixed(10));
         if (roundedCurrentPrice >= buyLimit) {
           return {
             shouldBuy: false,
-            reason: `Current price (${currentPrice}) >= lastBuyPrice (${config.lastBuyPrice}) + sellThreshold (${sellThreshold}%) = ${buyLimit}`
+            reason: `Current price (${currentPrice}) >= lastBuyPrice (${config.lastSellPrice}) + sellThreshold (${sellThreshold}%) = ${buyLimit}`
           };
         }
       }
@@ -99,8 +89,8 @@ class PriceTrackingService {
       }
 
       // Nova regra: só permite venda se buyThreshold for positivo
-      if (typeof config.buyThreshold !== 'number' || config.buyThreshold <= 0) {
-        return { shouldSell: false, reason: 'buyThreshold deve ser positivo para permitir venda' };
+      if (typeof config.sellThreshold !== 'number' || config.sellThreshold <= 0) {
+        return { shouldSell: false, reason: 'sellThreshold deve ser positivo para permitir venda' };
       }
 
       if (config.lastSellPrice) {

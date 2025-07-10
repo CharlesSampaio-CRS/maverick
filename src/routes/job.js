@@ -10,7 +10,8 @@ const {
   jobStrategyStatusHandler,
   getMonitoringStatusHandler,
   getPriceStatsHandler,
-  resetPriceTrackingHandler
+  resetPriceTrackingHandler,
+  stopMonitoringHandler
 } = require('../controllers/jobController');
 
 const jobConfigSchema = {
@@ -375,6 +376,28 @@ const jobRoutes = async (fastify, opts) => {
       }
     }
   }, resetPriceTrackingHandler);
+
+  fastify.post('/job/stop-monitoring/:symbol', {
+    schema: {
+      tags: ['Monitoring'],
+      summary: 'Stop monitoring for a symbol',
+      params: {
+        type: 'object',
+        properties: {
+          symbol: { type: 'string' }
+        }
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' }
+          }
+        }
+      }
+    }
+  }, stopMonitoringHandler);
 };
 
 module.exports = jobRoutes; 
