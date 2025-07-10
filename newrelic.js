@@ -10,7 +10,7 @@ exports.config = {
   /**
    * Array of application names.
    */
-  app_name: ['NovaDAX Bot API'],
+  app_name: ['Maverick Bot API'],
   /**
    * Your New Relic license key.
    */
@@ -139,6 +139,6 @@ exports.config = {
    * Host display name
    */
   process_host: {
-    display_name: process.env.NEW_RELIC_PROCESS_HOST_DISPLAY_NAME || 'NovaDAX Bot API'
+    display_name: process.env.NEW_RELIC_PROCESS_HOST_DISPLAY_NAME || 'Maverick Bot API'
   }
 } 

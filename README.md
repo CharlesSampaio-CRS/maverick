@@ -1,199 +1,99 @@
-# NovaDAX Bot API
+# Maverick - Automação de Ordens
 
-Node.js API for order automation on NovaDAX, using Fastify, MongoDB, and Swagger.
+Este sistema automatiza ordens de compra e venda de criptomoedas na NovaDAX através do Maverick, seguindo regras simples de variação de preço e saldo disponível.
 
-## Prerequisites
-- Node.js 18+
-- MongoDB
+## Regras Detalhadas de Compra e Venda
 
-## Installation
-```bash
-git clone ...
-cd ordersautomstic
-npm install
-cp .env.example .env # Edit with your keys
-```
+### COMPRA
+1. O Maverick só tenta comprar se a variação de preço em 24h (`changePercent24h`) for **menor ou igual ao `buyThreshold`** configurado para o símbolo.
+2. Só executa a compra se houver saldo em BRL **maior ou igual a R$25**.
+3. Só permite comprar se o `sellThreshold` for negativo (ex: -8).
+4. Se houver um `lastSellPrice` registrado, só compra se o preço atual for **menor** que:
+   - `lastSellPrice * (1 + sellThreshold/100)`
+   - Exemplo: `lastSellPrice = 100`, `sellThreshold = -10` → Limite = 100 * 0,90 = 90. Só compra se preço < 90.
+5. O preço de compra também pode ser limitado por regras de tracking de preço (proteção contra compras em tendência de queda).
 
-## Configuration
-Edit the `.env` file with your NovaDAX keys and MongoDB connection string.
+#### Exemplo de Compra
+- `buyThreshold = -8`
+- `sellThreshold = -10`
+- Preço caiu -12% nas últimas 24h (`changePercent24h = -12`)
+- Saldo BRL: R$50
+- `lastSellPrice = 100`
+- Preço atual = 89
+- Limite de compra: 100 * 0,90 = 90
+- **Compra será executada** (pois -12 <= -8, saldo suficiente, preço < 90)
 
-## Running the project
-```bash
-npm start
-```
+### VENDA
+1. O Maverick só tenta vender se a variação de preço em 24h (`changePercent24h`) for **maior ou igual ao `sellThreshold`** configurado para o símbolo.
+2. Só executa a venda se houver saldo da moeda base **maior que 1 unidade**.
+3. Só permite vender se o `buyThreshold` for positivo (ex: 10).
+4. Se houver um `lastBuyPrice` registrado, só vende se o preço atual for **maior** que:
+   - `lastBuyPrice * (1 + buyThreshold/100)`
+   - Exemplo: `lastBuyPrice = 100`, `buyThreshold = 10` → Limite = 100 * 1,10 = 110. Só vende se preço > 110.
+5. O valor mínimo de venda é R$50 (ou conforme configuração da estratégia).
+6. Estratégias de venda podem dividir a venda em múltiplos níveis de preço e usar trailing stop.
 
-Access the Swagger documentation at: [http://localhost:3000/docs](http://localhost:3000/docs)
+#### Exemplo de Venda
+- `sellThreshold = 5`
+- `buyThreshold = 10`
+- Preço subiu 8% nas últimas 24h (`changePercent24h = 8`)
+- Saldo BTC: 2
+- `lastBuyPrice = 100`
+- Preço atual = 120
+- Limite de venda: 100 * 1,10 = 110
+- **Venda será executada** (pois 8 >= 5, saldo suficiente, preço > 110)
 
-## Main Endpoints
+### Proteções e Observações
+- O sistema nunca executa ordens se as condições de variação de preço e saldo não forem atendidas.
+- O tracking de preços é atualizado automaticamente após cada operação bem-sucedida.
+- Estratégias de venda podem ser configuradas para múltiplos níveis de saída e trailing stop.
+- O Maverick nunca compra se o `sellThreshold` for zero ou positivo, e nunca vende se o `buyThreshold` for zero ou negativo.
 
-- **POST /buy** — Create buy order
-- **POST /sell** — Create sell order
-- **GET /balance** — List balances
-- **GET /balance/:currency** — Balance for a specific currency
-- **GET /ticker/:symbol** — Price and variation
-- **GET /operations/history** — Operations history
+## Endpoints Principais
 
-## Example buy request
-```bash
-curl -X POST http://localhost:3000/buy -H 'Content-Type: application/json' -d '{"symbol":"MOG_BRL","amount":100}'
-```
+- `GET /job/status` — Lista todos os símbolos e se estão ativos.
+- `POST /job/config` — Atualiza a configuração de um símbolo ou global.
+- `POST /job/interval` — Atualiza apenas o intervalo de execução dos jobs.
+- `POST /job/toggle/:symbol` — Ativa/desativa um símbolo.
+- `POST /job/run` — Executa o job para um símbolo específico.
+- `DELETE /job/symbols/:symbol` — Remove um símbolo da automação.
+- `GET /job/symbols/:symbol` — Busca a configuração de um símbolo.
+- `GET /job/status/detailed` — Status detalhado de todos os símbolos.
+- `GET /job/profit-summary` — Resumo de lucro/prejuízo total e por símbolo.
+- `GET /job/strategies` — Lista todas as estratégias de venda disponíveis.
+- `POST /job/reset-price-tracking/:symbol` — Reseta o tracking de preços de um símbolo.
 
-## Features
+## Exemplo de Configuração
 
-### 📊 Market Endpoints
-- `GET /ticker/:symbol` - Get price and variation data for a symbol
-- `GET /balance` - Get all currency balances
-- `GET /balance/:currency` - Get balance for a specific currency
-
-### 🛒 Trading Endpoints
-- `POST /buy` - Create a market buy order
-- `POST /sell` - Create a market sell order
-
-### 🤖 Monitoring Job Endpoints
-- `GET /job/status` - Check monitoring job status
-- `POST /job/toggle` - Enable/disable the job
-- `POST /job/run` - Run the job manually
-- `POST /job/config` - Update job configuration
-
-### 📈 Symbol Management Endpoints
-- `GET /job/symbols/:symbol` - Get configuration for a specific symbol
-- `POST /job/symbols` - Add a new symbol to monitoring
-- `PUT /job/symbols/:symbol` - Update configuration for a symbol
-- `DELETE /job/symbols/:symbol` - Remove symbol from monitoring
-
-## Automatic Monitoring Job
-
-The system includes a job that runs every 3 minutes and monitors multiple symbols simultaneously:
-
-1. **Monitors** the 24h variation of each configured symbol
-2. **Checks** if the drop is greater than the buy threshold OR if the rise is greater than the sell threshold
-3. **Creates** market buy orders (using BRL) or market sell orders (using the base currency)
-
-### Default Configuration
-```javascript
+```json
 {
-  checkInterval: '*/3 * * * *', // Every 3 minutes
-  enabled: true,
-  symbols: [
-    {
-      symbol: 'MOG_BRL',
-      buyThreshold: -10,  // Buy on a 10% drop
-      sellThreshold: 10,  // Sell on a 10% rise
-      enabled: true
-    },
-    {
-      symbol: 'BTC_BRL',
-      buyThreshold: -15,  // Buy on a 15% drop
-      sellThreshold: 15,  // Sell on a 15% rise
-      enabled: true
-    },
-    {
-      symbol: 'ETH_BRL',
-      buyThreshold: -12,  // Buy on a 12% drop
-      sellThreshold: 12,  // Sell on a 12% rise
-      enabled: true
-    }
-  ]
+  "symbol": "BTC_BRL",
+  "buyThreshold": -8,
+  "sellThreshold": 5,
+  "enabled": true,
+  "checkInterval": "*/10 * * * *",
+  "sellStrategy": "security"
 }
 ```
 
-### Usage Examples
+## Exemplo de Fluxo de Compra
+1. O preço do BTC caiu -9% nas últimas 24h.
+2. O `buyThreshold` está em -8.
+3. O saldo em BRL é R$100.
+4. O bot executa a compra, pois -9 <= -8 e há saldo suficiente.
 
-#### Check job status:
-```bash
-curl http://localhost:3000/job/status
-```
+## Exemplo de Fluxo de Venda
+1. O preço do BTC subiu 6% nas últimas 24h.
+2. O `sellThreshold` está em 5.
+3. O saldo de BTC é 2.
+4. O bot executa a venda, pois 6 >= 5 e há saldo suficiente.
 
-#### Run job manually:
-```bash
-curl -X POST http://localhost:3000/job/run
-```
+## Observações
+- O sistema não executa ordens se as condições de variação de preço e saldo não forem atendidas.
+- O tracking de preços é atualizado automaticamente após cada operação bem-sucedida.
+- Estratégias de venda podem ser configuradas para múltiplos níveis de saída.
 
-#### Buy MOG_BRL at market:
-```bash
-curl -X POST http://localhost:3000/buy \
-  -H "Content-Type: application/json" \
-  -d '{
-    "symbol": "MOG_BRL",
-    "amount": 100.00
-  }'
-```
+---
 
-#### Sell MOG at market:
-```bash
-curl -X POST http://localhost:3000/sell \
-  -H "Content-Type: application/json" \
-  -d '{
-    "symbol": "MOG_BRL",
-    "amount": 500.00
-  }'
-```
-
-#### Add new symbol:
-```bash
-curl -X POST http://localhost:3000/job/symbols \
-  -H "Content-Type: application/json" \
-  -d '{
-    "symbol": "ADA_BRL",
-    "buyThreshold": -8,
-    "sellThreshold": 12,
-    "enabled": true
-  }'
-```
-
-#### Update symbol configuration:
-```bash
-curl -X PUT http://localhost:3000/job/symbols/BTC_BRL \
-  -H "Content-Type: application/json" \
-  -d '{
-    "buyThreshold": -20,
-    "sellThreshold": 25
-  }'
-```
-
-#### Update job interval in real time:
-```bash
-# Change to run every 5 minutes
-curl -X POST http://localhost:3000/job/interval \
-  -H "Content-Type: application/json" \
-  -d '{
-    "checkInterval": "*/5 * * * *"
-  }'
-
-# Change to run every hour
-curl -X POST http://localhost:3000/job/interval \
-  -H "Content-Type: application/json" \
-  -d '{
-    "checkInterval": "0 * * * *"
-  }'
-
-# Change to run every 2 hours
-curl -X POST http://localhost:3000/job/interval \
-  -H "Content-Type: application/json" \
-  -d '{
-    "checkInterval": "0 */2 * * *"
-  }'
-```
-
-#### Update entire job configuration:
-```bash
-curl -X POST http://localhost:3000/job/config \
-  -H "Content-Type: application/json" \
-  -d '{
-    "enabled": true,
-    "checkInterval": "*/10 * * * *",
-    "symbols": [
-      {
-        "symbol": "BTC_BRL",
-        "buyThreshold": -15,
-        "sellThreshold": 20,
-        "enabled": true
-      }
-    ]
-  }'
-```
-
-#### Remove symbol:
-```bash
-curl -X DELETE http://localhost:3000/job/symbols/ETH_BRL
-``` 
+**Dúvidas ou sugestões?**
+Abra uma issue ou entre em contato com o desenvolvedor. 

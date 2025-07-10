@@ -1,5 +1,6 @@
 const axios = require('axios');
 const cacheService = require('./cacheService');
+// Maverick utiliza a API pública da NovaDAX para obter preços
 const BASE_URL = 'https://api.novadax.com';
 
 // HTTP client with timeout and retry configuration
