@@ -17,9 +17,10 @@ const { JobConfig } = require('../models/JobConfig');
 
 let realPrice = null;
 beforeAll(async () => {
+  // Teste usa a API pública da NovaDAX, mas o bot é Maverick
   const response = await axios.get('https://api.novadax.com/v1/market/ticker?symbol=MOG_BRL');
   realPrice = Number(response.data.data.lastPrice);
-  console.log('Preço real MOG_BRL (NovaDAX):', realPrice);
+  console.log('Preço real MOG_BRL (Maverick):', realPrice);
 });
 
 describe('PriceTrackingService', () => {

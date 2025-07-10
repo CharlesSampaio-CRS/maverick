@@ -15,8 +15,8 @@ const httpClient = axios.create({
 
 // Verificar se as variáveis de ambiente estão definidas
 if (!API_KEY || !API_SECRET) {
-  console.error('[ORDERS] ERROR: NOVADAX_API_KEY or NOVADAX_API_SECRET not defined');
-  throw new Error('NOVADAX_API_KEY and NOVADAX_API_SECRET must be defined');
+  console.error('[ORDERS] ERROR: MAVERICK_API_KEY or MAVERICK_API_SECRET not defined');
+  throw new Error('MAVERICK_API_KEY and MAVERICK_API_SECRET must be defined');
 }
 
 function signRequest(method, path, query = '', body = null) {

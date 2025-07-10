@@ -149,177 +149,40 @@ const detailedStatusSchema = {
 };
 
 const jobRoutes = async (fastify, opts) => {
-  fastify.get('/job/status', {
-    schema: {
-      tags: ['Trading Bot'],
-      summary: 'Get job list',
-      response: {
-        200: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              symbol: { type: 'string' },
-              status: { type: 'boolean' }
-            },
-            required: ['symbol', 'status']
-          }
-        }
-      }
-    }
-  }, jobStatusHandler);
+  // Rotas do Job (Automação de ordens)
 
-  fastify.post('/job/config', {
-    schema: { 
-      tags: ['Trading Bot'],
-      summary: 'Update job configuration', 
-      body: jobConfigSchema, 
-      response: { 200: jobConfigSchema } 
-    }
-  }, jobConfigHandler);
+  // Lista todos os símbolos e se estão ativos
+  fastify.get('/job/status', jobStatusHandler);
 
-  fastify.post('/job/interval', {
-    schema: { 
-      tags: ['Trading Bot'],
-      summary: 'Update only job interval', 
-      body: intervalSchema, 
-      response: { 200: jobConfigSchema } 
-    }
-  }, jobUpdateIntervalHandler);
+  // Atualiza a configuração de um símbolo ou global
+  fastify.post('/job/config', jobConfigHandler);
 
-  fastify.post('/job/toggle/:symbol', {
-    schema: {
-      tags: ['Trading Bot'],
-      summary: 'Toggle symbol enabled status',
-      params: {
-        type: 'object',
-        properties: { symbol: { type: 'string' } }
-      },
-      response: { 200: jobConfigSchema }
-    }
-  }, jobToggleHandler);
+  // Atualiza apenas o intervalo de execução (cron) dos jobs
+  fastify.post('/job/interval', jobUpdateIntervalHandler);
 
-  fastify.post('/job/run', {
-    schema: {
-      tags: ['Trading Bot'],
-      summary: 'Run job for a symbol',
-      body: symbolBodySchema,
-      response: { 200: { type: 'object', properties: { success: { type: 'boolean' }, message: { type: 'string' } } } }
-    }
-  }, jobRunHandler);
+  // Ativa/desativa um símbolo
+  fastify.post('/job/toggle/:symbol', jobToggleHandler);
 
-  fastify.delete('/job/symbols/:symbol', {
-    schema: { 
-      tags: ['Trading Bot'],
-      summary: 'Remove symbol', 
-      response: { 200: jobConfigSchema } 
-    }
-  }, jobRemoveSymbolHandler);
+  // Executa o job para um símbolo específico (compra/venda automática)
+  fastify.post('/job/run', jobRunHandler);
 
-  fastify.get('/job/symbols/:symbol', {
-    schema: {
-      tags: ['Trading Bot'],
-      summary: 'Get symbol configuration',
-      response: {
-        200: {
-          type: 'object',
-          properties: {
-            symbol: { type: 'string' },
-            buyThreshold: { type: 'number' },
-            sellThreshold: { type: 'number' },
-            checkInterval: { type: 'string' },
-            createdAt: { type: 'string', format: 'date-time' },
-            updatedAt: { type: 'string', format: 'date-time' },
-            __v: { type: 'number' }
-          }
-        }
-      }
-    }
-  }, jobGetSymbolHandler);
+  // Remove um símbolo da automação
+  fastify.delete('/job/symbols/:symbol', jobRemoveSymbolHandler);
 
-  fastify.get('/job/status/detailed', {
-    schema: { 
-      tags: ['Trading Bot'],
-      summary: 'Get detailed job status', 
-      response: { 200: detailedStatusSchema } 
-    }
-  }, jobStatusDetailedHandler);
+  // Busca a configuração de um símbolo
+  fastify.get('/job/symbols/:symbol', jobGetSymbolHandler);
 
-  // Rotas para configuração da estratégia de venda
+  // Status detalhado de todos os símbolos e suas execuções
+  fastify.get('/job/status/detailed', jobStatusDetailedHandler);
 
-  fastify.get('/job/profit-summary', {
-    schema: {
-      tags: ['Strategies'],
-      summary: 'Get total profit/loss summary',
-      response: { 200: profitSummarySchema }
-    }
-  }, require('../controllers/jobController').getProfitSummaryHandler);
+  // Resumo de lucro/prejuízo total e por símbolo
+  fastify.get('/job/profit-summary', require('../controllers/jobController').getProfitSummaryHandler);
 
-  // Remove the /job/strategy-status endpoint
-  // fastify.get('/job/strategy-status', { ... }, jobStrategyStatusHandler);
+  // Lista todas as estratégias de venda disponíveis, com descrição e regras
+  fastify.get('/job/strategies', require('../controllers/jobController').getAllStrategiesHandler);
 
-  // Add new endpoint for all strategies with description and rule
-  fastify.get('/job/strategies', {
-    schema: {
-      tags: ['Strategies'],
-      summary: 'Get all sale strategies with description and rule',
-      response: {
-        200: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              type: { type: 'string' },
-              name: { type: 'string' },
-              description: { type: 'string' },
-              rule: {
-                type: 'object',
-                properties: {
-                  levels: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        percentage: { type: 'number' },
-                        priceIncrease: { type: 'number' }
-                      }
-                    }
-                  },
-                  trailingStop: { type: 'number' },
-                  minSellValueBRL: { type: 'number' }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }, require('../controllers/jobController').getAllStrategiesHandler);
-
-  // Remove the /job/price-stats endpoint
-  // fastify.get('/job/price-stats/:symbol', { ... }, getPriceStatsHandler);
-
-  fastify.post('/job/reset-price-tracking/:symbol', {
-    schema: {
-      tags: ['Monitoring'],
-      summary: 'Reset price tracking for a symbol',
-      params: {
-        type: 'object',
-        properties: {
-          symbol: { type: 'string' }
-        }
-      },
-      response: {
-        200: {
-          type: 'object',
-          properties: {
-            success: { type: 'boolean' },
-            message: { type: 'string' }
-          }
-        }
-      }
-    }
-  }, resetPriceTrackingHandler);
+  // Reseta o tracking de preços de um símbolo
+  fastify.post('/job/reset-price-tracking/:symbol', resetPriceTrackingHandler);
 };
 
 module.exports = jobRoutes; 

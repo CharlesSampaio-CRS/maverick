@@ -54,7 +54,7 @@ async function getBalance(currency = null) {
   try {
     const res = await httpClient.get(url, { headers });
     if (res.data.code !== 'A10000') {
-      throw new Error('Unexpected response from NovaDAX');
+      throw new Error('Unexpected response from Maverick');
     }
     
     const balances = res.data.data;

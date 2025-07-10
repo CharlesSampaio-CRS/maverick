@@ -55,11 +55,11 @@ fastify.register(fastifyRateLimit, {
 fastify.register(fastifySwagger, {
   swagger: {
     info: {
-      title: 'NovaDAX Bot API',
-      description: 'API for NovaDAX order automation with advanced trading strategies',
+      title: 'Maverick Bot API',
+      description: 'API for Maverick order automation with advanced trading strategies',
       version: '1.0.0',
       contact: {
-        name: 'NovaDAX Bot API',
+        name: 'Maverick Bot API',
         url: 'https://github.com/your-repo'
       }
     },
@@ -71,10 +71,6 @@ fastify.register(fastifySwagger, {
       {
         name: 'Strategies',
         description: 'Sale strategy configuration and performance monitoring'
-      },
-      {
-        name: 'Monitoring',
-        description: 'Active monitoring status and buy/sell configurations'
       },
       {
         name: 'Balance',
