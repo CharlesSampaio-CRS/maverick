@@ -11,7 +11,6 @@ const JobConfigSchema = new mongoose.Schema({
     enum: ['security', 'basic', 'aggressive'], 
     default: 'security' 
   }, // Estratégia de venda por símbolo
-  monitoringEnabled: { type: Boolean, default: false }, // Habilitar monitoring para este símbolo
   
   // Novos campos para controle de preços
   lastBuyPrice: { type: Number, default: null }, // Preço da última compra (baseado no histórico)
