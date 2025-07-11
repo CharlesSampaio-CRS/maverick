@@ -99,13 +99,41 @@ const ordersRoutes = async (fastify, opts) => {
             properties: {
               _id: { type: 'string', description: 'ID da operação' },
               symbol: { type: 'string', description: 'Símbolo da moeda' },
-              type: { type: 'string', description: 'Tipo da operação (buy/sell)' },
-              amount: { type: 'number', description: 'Quantidade (para vendas)' },
-              value: { type: 'number', description: 'Valor em BRL (para compras)' },
+              type: { type: 'string', description: 'Tipo da operação (buy/sell)', enum: ['buy', 'sell'] },
+              amount: { type: 'number', description: 'Quantidade da operação' },
               price: { type: 'number', description: 'Preço da operação' },
-              status: { type: 'string', description: 'Status da operação' },
-              response: { type: 'object', description: 'Resposta da exchange' },
-              createdAt: { type: 'string', description: 'Data de criação' }
+              status: { type: 'string', description: 'Status da operação', default: 'pending' },
+              response: { 
+                type: 'object', 
+                description: 'Resposta da exchange',
+                properties: {
+                  code: { type: 'string', description: 'Código de resposta da exchange' },
+                  message: { type: 'string', description: 'Mensagem de resposta da exchange' },
+                  data: { 
+                    type: 'object', 
+                    description: 'Dados da ordem',
+                    properties: {
+                      amount: { type: 'string', description: 'Quantidade da ordem' },
+                      feeCurrency: { type: 'string', description: 'Moeda da taxa' },
+                      filledAmount: { type: 'string', description: 'Quantidade preenchida' },
+                      filledValue: { type: 'string', description: 'Valor preenchido' },
+                      id: { type: 'string', description: 'ID da ordem na exchange' },
+                      price: { type: 'string', description: 'Preço da ordem' },
+                      side: { type: 'string', description: 'Lado da ordem (BUY/SELL)' },
+                      status: { type: 'string', description: 'Status da ordem na exchange' },
+                      symbol: { type: 'string', description: 'Símbolo da ordem' },
+                      timestamp: { type: 'number', description: 'Timestamp da ordem' },
+                      type: { type: 'string', description: 'Tipo da ordem (MARKET/LIMIT)' },
+                      value: { type: 'string', description: 'Valor da ordem' }
+                    }
+                  }
+                }
+              },
+              buyPrice: { type: 'number', description: 'Preço de compra (para vendas)' },
+              profit: { type: 'number', description: 'Lucro/prejuízo da operação' },
+              createdAt: { type: 'string', format: 'date-time', description: 'Data de criação' },
+              __v: { type: 'number', description: 'Versão do documento MongoDB' },
+              value: { type: 'number', description: 'Valor em BRL (apenas para compras)' }
             }
           }
         },
