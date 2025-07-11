@@ -209,15 +209,12 @@ async function jobRunHandler(request, reply) {
   let symbol;
   try {
     ({ symbol } = request.body);
+    if (!symbol) {
+      return reply.status(400).send({ error: 'O campo symbol é obrigatório.' });
+    }
     const nowStr = new Date().toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).replace('T', ' ');
-    
     logJobStart(symbol, nowStr);
     
-    if (!symbol) {
-      logJobFailure(symbol, 'Symbol not provided', nowStr);
-      return reply.status(400).send({ error: 'Symbol not provided' });
-    }
-
     // 1. Get configuration and ticker data
     const [config, ticker] = await Promise.all([
       jobService.status(),
@@ -679,6 +676,9 @@ async function executeStrategySell(symbol, symbolConfig, strategyConfig, tracker
 // ===== CONFIGURATION HANDLERS =====
 async function jobConfigHandler(request, reply) {
   try {
+    if ('symbol' in request.body && !request.body.symbol) {
+      return reply.status(400).send({ error: 'O campo symbol é obrigatório para atualização de símbolo.' });
+    }
     console.log('[MAVERICK CONFIG] Processing configuration update');
     console.log('[MAVERICK CONFIG] Request body:', JSON.stringify(request.body, null, 2));
     
@@ -738,6 +738,9 @@ async function jobConfigHandler(request, reply) {
 // ===== SYMBOL MANAGEMENT HANDLERS =====
 async function jobAddSymbolHandler(request, reply) {
   try {
+    if (!request.body.symbol) {
+      return reply.status(400).send({ error: 'O campo symbol é obrigatório.' });
+    }
     const config = await jobService.addSymbol(request.body);
     return reply.send(config);
   } catch (err) {
@@ -748,6 +751,9 @@ async function jobAddSymbolHandler(request, reply) {
 async function jobRemoveSymbolHandler(request, reply) {
   try {
     const { symbol } = request.params;
+    if (!symbol) {
+      return reply.status(400).send({ error: 'O parâmetro symbol é obrigatório.' });
+    }
     const config = await jobService.removeSymbol(symbol);
     return reply.send(config);
   } catch (err) {
@@ -758,6 +764,9 @@ async function jobRemoveSymbolHandler(request, reply) {
 async function jobUpdateSymbolHandler(request, reply) {
   try {
     const { symbol } = request.params;
+    if (!symbol) {
+      return reply.status(400).send({ error: 'O parâmetro symbol é obrigatório.' });
+    }
     const config = await jobService.updateSymbol(symbol, request.body);
     return reply.send(config);
   } catch (err) {
@@ -768,7 +777,13 @@ async function jobUpdateSymbolHandler(request, reply) {
 async function jobGetSymbolHandler(request, reply) {
   try {
     const { symbol } = request.params;
+    if (!symbol) {
+      return reply.status(400).send({ error: 'O parâmetro symbol é obrigatório.' });
+    }
     const symbolConfig = await jobService.getSymbol(symbol);
+    if (!symbolConfig) {
+      return reply.status(404).send({ error: 'Configuração do símbolo não encontrada.' });
+    }
     return reply.send(symbolConfig);
   } catch (err) {
     return reply.status(500).send({ error: err.message });
@@ -878,6 +893,9 @@ async function jobStatusDetailedHandler(request, reply) {
 async function jobUpdateIntervalHandler(request, reply) {
   try {
     const { checkInterval } = request.body;
+    if (!checkInterval) {
+      return reply.status(400).send({ error: 'O campo checkInterval é obrigatório.' });
+    }
     if (!cron.validate(checkInterval)) {
       return reply.status(400).send({ error: 'Invalid interval format. Use cron format (ex: */5 * * * *)' });
     }
@@ -1002,6 +1020,9 @@ async function stopMonitoringHandler(request, reply) {
 async function getPriceStatsHandler(request, reply) {
   try {
     const { symbol } = request.params;
+    if (!symbol) {
+      return reply.status(400).send({ error: 'O parâmetro symbol é obrigatório.' });
+    }
     const stats = await priceTrackingService.getPriceStats(symbol);
     
     if (!stats.success) {
@@ -1018,6 +1039,9 @@ async function getPriceStatsHandler(request, reply) {
 async function resetPriceTrackingHandler(request, reply) {
   try {
     const { symbol } = request.params;
+    if (!symbol) {
+      return reply.status(400).send({ error: 'O parâmetro symbol é obrigatório.' });
+    }
     const result = await priceTrackingService.resetPriceTracking(symbol);
     
     if (!result.success) {
@@ -1052,6 +1076,9 @@ async function jobStatusHandler(request, reply) {
 async function jobToggleHandler(request, reply) {
   try {
     const { symbol } = request.params;
+    if (!symbol) {
+      return reply.status(400).send({ error: 'O parâmetro symbol é obrigatório.' });
+    }
     const config = await jobService.toggleSymbol(symbol);
     return reply.send(config);
   } catch (err) {

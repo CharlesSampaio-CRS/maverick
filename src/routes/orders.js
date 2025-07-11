@@ -6,25 +6,38 @@ const ordersRoutes = async (fastify, opts) => {
     schema: {
       tags: ['Orders'],
       summary: 'Create market buy order',
+      description: 'Cria uma ordem de compra a mercado para o símbolo especificado.',
       body: {
         type: 'object',
         required: ['symbol'],
         properties: {
-          symbol: { type: 'string' }
+          symbol: { type: 'string', description: 'Símbolo da moeda (ex: BTC_BRL)' }
         }
       },
       response: {
         200: {
           type: 'object',
           properties: {
-            _id: { type: 'string' },
-            symbol: { type: 'string' },
-            type: { type: 'string' },
-            amount: { type: 'number' },
-            price: { type: 'number' },
-            status: { type: 'string' },
-            response: { type: 'object' },
-            createdAt: { type: 'string' }
+            _id: { type: 'string', description: 'ID da operação' },
+            symbol: { type: 'string', description: 'Símbolo da moeda' },
+            type: { type: 'string', description: 'Tipo da operação (buy)' },
+            amount: { type: 'number', description: 'Quantidade comprada' },
+            price: { type: 'number', description: 'Preço da compra' },
+            status: { type: 'string', description: 'Status da operação' },
+            response: { type: 'object', description: 'Resposta da exchange' },
+            createdAt: { type: 'string', description: 'Data de criação' }
+          }
+        },
+        400: {
+          type: 'object',
+          properties: {
+            error: { type: 'string', description: 'Mensagem de erro' }
+          }
+        },
+        500: {
+          type: 'object',
+          properties: {
+            error: { type: 'string', description: 'Mensagem de erro' }
           }
         }
       }
@@ -35,25 +48,38 @@ const ordersRoutes = async (fastify, opts) => {
     schema: {
       tags: ['Orders'],
       summary: 'Create market sell order',
+      description: 'Cria uma ordem de venda a mercado para o símbolo especificado.',
       body: {
         type: 'object',
         required: ['symbol'],
         properties: {
-          symbol: { type: 'string' }
+          symbol: { type: 'string', description: 'Símbolo da moeda (ex: BTC_BRL)' }
         }
       },
       response: {
         200: {
           type: 'object',
           properties: {
-            _id: { type: 'string' },
-            symbol: { type: 'string' },
-            type: { type: 'string' },
-            amount: { type: 'number' },
-            price: { type: 'number' },
-            status: { type: 'string' },
-            response: { type: 'object' },
-            createdAt: { type: 'string' }
+            _id: { type: 'string', description: 'ID da operação' },
+            symbol: { type: 'string', description: 'Símbolo da moeda' },
+            type: { type: 'string', description: 'Tipo da operação (sell)' },
+            amount: { type: 'number', description: 'Quantidade vendida' },
+            price: { type: 'number', description: 'Preço da venda' },
+            status: { type: 'string', description: 'Status da operação' },
+            response: { type: 'object', description: 'Resposta da exchange' },
+            createdAt: { type: 'string', description: 'Data de criação' }
+          }
+        },
+        400: {
+          type: 'object',
+          properties: {
+            error: { type: 'string', description: 'Mensagem de erro' }
+          }
+        },
+        500: {
+          type: 'object',
+          properties: {
+            error: { type: 'string', description: 'Mensagem de erro' }
           }
         }
       }
@@ -64,22 +90,29 @@ const ordersRoutes = async (fastify, opts) => {
     schema: {
       tags: ['Orders'],
       summary: 'Operations history',
+      description: 'Retorna o histórico das últimas 100 operações realizadas.',
       response: {
         200: {
           type: 'array',
           items: {
             type: 'object',
             properties: {
-              _id: { type: 'string' },
-              symbol: { type: 'string' },
-              type: { type: 'string' },
-              amount: { type: 'number' },
-              value: { type: 'number' },
-              price: { type: 'number' },
-              status: { type: 'string' },
-              response: { type: 'object' },
-              createdAt: { type: 'string' }
+              _id: { type: 'string', description: 'ID da operação' },
+              symbol: { type: 'string', description: 'Símbolo da moeda' },
+              type: { type: 'string', description: 'Tipo da operação (buy/sell)' },
+              amount: { type: 'number', description: 'Quantidade (para vendas)' },
+              value: { type: 'number', description: 'Valor em BRL (para compras)' },
+              price: { type: 'number', description: 'Preço da operação' },
+              status: { type: 'string', description: 'Status da operação' },
+              response: { type: 'object', description: 'Resposta da exchange' },
+              createdAt: { type: 'string', description: 'Data de criação' }
             }
+          }
+        },
+        500: {
+          type: 'object',
+          properties: {
+            error: { type: 'string', description: 'Mensagem de erro' }
           }
         }
       }
