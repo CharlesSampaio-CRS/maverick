@@ -233,6 +233,9 @@ async function jobRunHandler(request, reply) {
       return reply.send({ success: false, message: 'Error getting ticker data' });
     }
 
+    // Log detalhado da execução do job
+    console.log(`[MAVERICK][JOB] Execução do job\n  • Símbolo: ${symbol}\n  • Data/hora: ${nowStr}\n  • Estratégia: ${symbolConfig.sellStrategy}\n  • Intervalo: ${symbolConfig.checkInterval}\n  • BuyThreshold: ${symbolConfig.buyThreshold}\n  • SellThreshold: ${symbolConfig.sellThreshold}\n  • Preço atual: ${ticker.lastPrice}\n  • Variação 24h: ${ticker.changePercent24h}`);
+
     // Log ticker data
     logJobMetric('price', symbol, parseFloat(ticker.lastPrice));
     logJobMetric('change24h', symbol, parseFloat(ticker.changePercent24h));
@@ -267,15 +270,18 @@ async function jobRunHandler(request, reply) {
         buyThreshold: symbolConfig.buyThreshold,
         sellThreshold: symbolConfig.sellThreshold
       });
+      console.log(`[MAVERICK][JOB] Action taken: none`);
       return reply.send({ success: false, message: 'No buy or sell condition met. Price is outside buy/sell thresholds.' });
     }
 
     // 3. Execute order
     if (action === 'buy') {
+      console.log(`[MAVERICK][JOB] Action taken: buy`);
       return await executeBuyOrder(symbol, symbolConfig, ticker, nowStr, reply);
     } 
     
     if (action === 'sell') {
+      console.log(`[MAVERICK][JOB] Action taken: sell`);
       return await executeSellOrder(symbol, symbolConfig, ticker, nowStr, reply);
     }
 
